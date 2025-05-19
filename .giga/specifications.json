@@ -1,0 +1,18 @@
+[
+  {
+    "fileName": "main-overview.mdc",
+    "description": "Complete system overview of the Cursor indexing system, including its purpose, architecture, and key components"
+  },
+  {
+    "fileName": "indexing-rules-model.mdc",
+    "description": "Detailed documentation of the indexing rules structure, pattern matching syntax, and rule precedence hierarchy"
+  },
+  {
+    "fileName": "indexing-flow.mdc",
+    "description": "Documentation of how the indexing system processes files, including the decision tree for inclusion/exclusion and reference handling"
+  },
+  {
+    "fileName": "reference-resolution.mdc",
+    "description": "Detailed explanation of the @ reference system, including how context-specific inclusions are processed and resolved"
+  }
+]

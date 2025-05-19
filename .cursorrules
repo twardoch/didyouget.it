@@ -1,0 +1,59 @@
+
+START SPECIFICATION:
+---
+description: This overview applies when working with selective indexing configurations that manage auto-save files and context-specific inclusions in development workflows using SpecStory integration
+globs: .cursorindexingignore
+alwaysApply: false
+---
+
+
+# main-overview
+
+## Development Guidelines
+
+- Only modify code directly relevant to the specific request. Avoid changing unrelated functionality.
+- Never replace code with placeholders like `# ... rest of the processing ...`. Always include complete code.
+- Break problems into smaller steps. Think through each step separately before implementing.
+- Always provide a complete PLAN with REASONING based on evidence from code and logs before making changes.
+- Explain your OBSERVATIONS clearly, then provide REASONING to identify the exact issue. Add console logs when needed to gather more information.
+
+
+The project implements a selective indexing system focused on managing document processing within development workflows. The core functionality revolves around intelligent file exclusion and contextual inclusion mechanisms.
+
+## Core Business Components
+
+### Indexing Control System
+**Importance Score: 85**
+
+Located in `.cursorindexingignore`, this component manages the selective processing of documents with two primary functions:
+
+1. Auto-save Management
+- Excludes `.specstory/**` directory content
+- Prevents processing of temporary development artifacts
+- Optimizes index relevance by filtering transient content
+
+2. Contextual Inclusion Framework
+- Supports explicit context inclusion via `@` references
+- Enables granular control over indexed content
+- Allows exceptions to general exclusion rules
+
+## Integration Points
+
+### SpecStory Integration
+**Importance Score: 75**
+
+The indexing system specifically integrates with SpecStory workflows by:
+- Recognizing SpecStory-generated auto-save patterns
+- Maintaining clean indexes during document drafting
+- Supporting development-time document management
+
+### Context Management
+**Importance Score: 80**
+
+Implements domain-specific rules for:
+- Selective content processing
+- Explicit context inclusion mechanisms
+- Workflow-aware document handling
+
+$END$
+END SPECIFICATION

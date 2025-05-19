@@ -1,0 +1,46 @@
+---
+description: Specification for controlling file indexing behavior and context-aware inclusion/exclusion rules
+globs: .cursorindexingignore,.specstory/**
+alwaysApply: false
+---
+
+
+# indexing-flow
+
+## Core Indexing Control System
+**Importance Score: 85**
+
+The indexing flow implements selective content processing through a hierarchical rule system:
+
+1. Default Exclusion Layer
+- Directory-based exclusion using `.cursorindexingignore`
+- All `.specstory/**` content automatically excluded from indexing
+- Prevents processing of auto-save and temporary content
+
+2. Contextual Reference System
+- Allows explicit inclusion via `@` references
+- Overrides default exclusion rules
+- Enables granular control of indexed content
+
+## Domain-Specific Rules
+**Importance Score: 75**
+
+1. Auto-Save Management
+- Automatic exclusion of SpecStory auto-save artifacts
+- Prevents pollution of index with transient content
+- Maintains index relevance by focusing on finalized content
+
+2. Reference-Based Inclusion
+- Context-aware indexing through reference targeting
+- Selective inclusion mechanism for excluded directories
+- Maintains indexing efficiency while allowing exceptions
+
+## Integration Points
+**Importance Score: 70**
+
+The indexing system interfaces with:
+- SpecStory document management
+- Reference resolution system
+- Content storage optimization
+
+$END$

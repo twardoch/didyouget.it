@@ -1,0 +1,49 @@
+---
+description: Defines rules and patterns for selective file indexing and contextual inclusion/exclusion in the Cursor system
+globs: .cursorindexingignore,**/.cursorindexingignore
+alwaysApply: false
+---
+
+
+# indexing-rules-model
+
+## Core Rule Structure
+The indexing rules model implements selective content filtering through pattern-based exclusion rules with contextual override capabilities.
+
+## Pattern Matching System
+```
+.specstory/**    # Directory-based exclusion
+@references      # Contextual inclusion markers
+```
+
+Importance Score: 85 - Critical for content organization and indexing efficiency
+
+## Rule Components
+
+### Directory Exclusions
+- Full directory path exclusion using `/**` syntax
+- Targets specific tool-generated content (e.g., `.specstory/`)
+- Prevents indexing of transient/auto-save files
+
+### Context References
+- Uses `@` prefix for explicit inclusion markers
+- Overrides general exclusion rules
+- Enables granular content selection
+
+Importance Score: 80 - Essential for maintaining indexed content relevance
+
+## Business Logic Implementation
+
+### Selective Indexing Control
+1. Primary exclusion rules prevent indexing of non-essential content
+2. Context references allow specific content inclusion
+3. Tool-specific directory targeting (.specstory)
+
+### Workflow Integration
+- Optimizes indexing by filtering auto-generated content
+- Maintains searchability of explicitly referenced materials
+- Supports development workflow with SpecStory integration
+
+Importance Score: 90 - Direct impact on system efficiency and content organization
+
+$END$

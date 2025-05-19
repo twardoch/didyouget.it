@@ -1,0 +1,38 @@
+---
+description: Handles context-specific file inclusion via @ references in the indexing system
+globs: .cursorindexingignore,**/@*
+alwaysApply: false
+---
+
+
+# reference-resolution
+
+The reference resolution system implements selective content inclusion through @ references within the indexing system. This allows for granular control over what content gets indexed, even when it exists within excluded directories.
+
+### Core Reference Resolution Logic
+- Processes @ references to include specific contexts
+- Overrides general exclusion rules in `.cursorindexingignore`
+- Enables contextual inclusion of otherwise excluded content
+
+### Implementation Details
+File: `.cursorindexingignore`
+```
+Importance Score: 85 - Critical for contextual content management
+```
+
+The reference system enables:
+1. Context-specific inclusions within excluded directories
+2. Selective override of general exclusion rules
+3. Granular control over indexed content through @ mentions
+
+### Integration Points
+- Works in conjunction with the `.specstory/` directory exclusion rule
+- Provides exceptions to the auto-save file exclusion mechanism
+- Enables targeted indexing of specific contexts
+
+### Business Impact
+- Maintains efficient indexing while allowing specific content inclusion
+- Supports context-aware document management
+- Enables flexible content accessibility within excluded directories
+
+$END$
