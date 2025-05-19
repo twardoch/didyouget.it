@@ -1,8 +1,29 @@
 
+
+# Project
+
+I want a fast performant app `Did You Get It` (Mac identifier it.didyouget.mac, homepage https://didyouget.it ) that will run on macOS with extremely minimal user interface, and will let me: 
+
+- Record the configurable area on the selectable screen, as a 60 FPS full-resolution (Retina) video
+- If requested, record the audio from a selectable audio device
+- If requested, record the mouse movements and clicks in JSON format with click vs. hold-release detection
+- If requested, record the keyboard strokes in JSON format with tap vs. hold-release detection
+- Save the recorded video, audio, and mouse/keyboard strokes to a file. If requested, the audio should be mixed with the video.
+
+## Structure
+
+- `README.md` contains the overview of the project
+- `SPEC.md` contains the detailed specification. Check it, make sure you understand it, and then start working.
+- `PROGRESS.md` contains the plan and uses `[ ]` vs. `[x]` items to track the progress. Keep it updated as you work.
+- `CHANGELOG.md` contains the changelog. Keep updated as you work
+
+
+
+
 START SPECIFICATION:
 ---
-description: This overview applies when working with selective indexing configurations that manage auto-save files and context-specific inclusions in development workflows using SpecStory integration
-globs: .cursorindexingignore
+description: Documentation for screen recording applications focusing on core capture logic, recording configuration, and input handling. Apply when documenting main recording functionality and user preference management.
+globs: *.swift,Models/*.swift,Views/*.swift
 alwaysApply: false
 ---
 
@@ -18,42 +39,30 @@ alwaysApply: false
 - Explain your OBSERVATIONS clearly, then provide REASONING to identify the exact issue. Add console logs when needed to gather more information.
 
 
-The project implements a selective indexing system focused on managing document processing within development workflows. The core functionality revolves around intelligent file exclusion and contextual inclusion mechanisms.
+The DidYouGet application implements screen recording functionality with configurable capture modes and preferences management.
 
-## Core Business Components
+Core Components:
 
-### Indexing Control System
-**Importance Score: 85**
+1. Recording Management (Importance: 95)
+- Supports full display, window, and custom area capture modes
+- Real-time screen and audio capture with sync capabilities
+- Track and manage recording states and duration
+Location: DidYouGet/DidYouGet/Models/RecordingManager.swift
 
-Located in `.cursorindexingignore`, this component manages the selective processing of documents with two primary functions:
+2. Recording Configuration (Importance: 85)
+- Quality tier management (low/medium/high/lossless)
+- Input tracking configuration for mouse and keyboard
+- Audio source selection and management
+- Output file naming conventions
+Location: DidYouGet/DidYouGet/Models/PreferencesManager.swift
 
-1. Auto-save Management
-- Excludes `.specstory/**` directory content
-- Prevents processing of temporary development artifacts
-- Optimizes index relevance by filtering transient content
+3. Input Control System (Importance: 80)
+- Mouse movement and click simulation
+- Keyboard shortcut handling
+- Directional scrolling control
+- Coordinate-based cursor positioning
 
-2. Contextual Inclusion Framework
-- Supports explicit context inclusion via `@` references
-- Enables granular control over indexed content
-- Allows exceptions to general exclusion rules
-
-## Integration Points
-
-### SpecStory Integration
-**Importance Score: 75**
-
-The indexing system specifically integrates with SpecStory workflows by:
-- Recognizing SpecStory-generated auto-save patterns
-- Maintaining clean indexes during document drafting
-- Supporting development-time document management
-
-### Context Management
-**Importance Score: 80**
-
-Implements domain-specific rules for:
-- Selective content processing
-- Explicit context inclusion mechanisms
-- Workflow-aware document handling
+The application architecture centers around screen capture workflows with customizable input tracking and quality settings. Recording configurations are persisted and managed through dedicated preference handlers, while the input control system enables precise capture control.
 
 $END$
 END SPECIFICATION

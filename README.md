@@ -93,8 +93,8 @@ DidYouGet_YYYY-MM-DD_HH-MM-SS.mp4
 ```
 
 Additional files may be created:
-- `.json` - Mouse movement, clicks, and drag data with event types
-- `.json` - Keyboard input with tap/hold-release events
+- `_mouse.json` - Mouse movement, clicks, and drag data with event types and timestamps
+- `_keyboard.json` - Keyboard input with tap/hold-release events and modifier key states
 
 ## Privacy & Security
 
@@ -124,6 +124,10 @@ Access preferences through the menu bar icon > Preferences or ⌘,
 - Toggle mouse movement recording
 - Toggle keyboard input capture
 - Privacy options for sensitive input
+- Tap/hold-release detection for mouse clicks
+- Drag event tracking
+- Modifier key tracking for keyboard
+- Customizable threshold for click/tap detection (default: 200ms)
 
 ### Output Settings
 - Change default save location

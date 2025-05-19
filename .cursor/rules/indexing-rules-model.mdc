@@ -1,49 +1,35 @@
 ---
-description: Defines rules and patterns for selective file indexing and contextual inclusion/exclusion in the Cursor system
-globs: .cursorindexingignore,**/.cursorindexingignore
+description: Defines pattern matching rules and indexing behavior for video recording file management
+globs: .cursorindexingignore,Models/*.swift,Views/*.swift
 alwaysApply: false
 ---
 
 
 # indexing-rules-model
 
-## Core Rule Structure
-The indexing rules model implements selective content filtering through pattern-based exclusion rules with contextual override capabilities.
+The indexing rules model implements the file organization and pattern matching system for recorded video content.
 
-## Pattern Matching System
-```
-.specstory/**    # Directory-based exclusion
-@references      # Contextual inclusion markers
-```
+Core Indexing Components:
 
-Importance Score: 85 - Critical for content organization and indexing efficiency
+1. Recording Output Pattern Structure:
+- Enforces "DidYouGet_YYYY-MM-DD_HH-MM-SS" naming convention
+- Groups recordings by capture mode (full display/window/area)
+- Maintains metadata association between recordings and preferences
 
-## Rule Components
+2. Video Organization Rules:
+- Organizes recordings based on quality tier categories 
+- Auto-categorizes files by input type (screen-only vs screen+audio)
+- Maintains temporal grouping of related recording segments
 
-### Directory Exclusions
-- Full directory path exclusion using `/**` syntax
-- Targets specific tool-generated content (e.g., `.specstory/`)
-- Prevents indexing of transient/auto-save files
+Business Rule Importance Scores:
 
-### Context References
-- Uses `@` prefix for explicit inclusion markers
-- Overrides general exclusion rules
-- Enables granular content selection
+90 - Recording naming pattern enforcement
+85 - Quality-based categorization
+75 - Input type organization
+70 - Temporal grouping rules
 
-Importance Score: 80 - Essential for maintaining indexed content relevance
-
-## Business Logic Implementation
-
-### Selective Indexing Control
-1. Primary exclusion rules prevent indexing of non-essential content
-2. Context references allow specific content inclusion
-3. Tool-specific directory targeting (.specstory)
-
-### Workflow Integration
-- Optimizes indexing by filtering auto-generated content
-- Maintains searchability of explicitly referenced materials
-- Supports development workflow with SpecStory integration
-
-Importance Score: 90 - Direct impact on system efficiency and content organization
+Relevant Files:
+- `DidYouGet/DidYouGet/Models/RecordingManager.swift`
+- `DidYouGet/DidYouGet/Models/PreferencesManager.swift`
 
 $END$

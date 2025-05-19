@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 struct PreferencesView: View {
     @EnvironmentObject var preferencesManager: PreferencesManager
@@ -58,6 +59,8 @@ struct RecordingSettingsView: View {
 
 struct AudioSettingsView: View {
     @EnvironmentObject var preferencesManager: PreferencesManager
+    @State private var audioDevices: [AudioManager.AudioDevice] = []
+    @State private var selectedDevice: AudioManager.AudioDevice?
     
     var body: some View {
         Form {
@@ -65,13 +68,53 @@ struct AudioSettingsView: View {
                 Toggle("Enable Audio Recording", isOn: $preferencesManager.recordAudio)
                 
                 if preferencesManager.recordAudio {
-                    // TODO: Add audio device picker
-                    Text("Audio device selection coming soon...")
-                        .foregroundColor(.secondary)
+                    Toggle("Mix Audio with Video", isOn: $preferencesManager.mixAudioWithVideo)
+                        .help("When enabled, audio will be mixed with the video file. When disabled, audio will be saved as a separate file.")
+                    
+                    Picker("Input Device", selection: $selectedDevice) {
+                        Text("None").tag(nil as AudioManager.AudioDevice?)
+                        ForEach(audioDevices) { device in
+                            Text(device.name).tag(device as AudioManager.AudioDevice?)
+                        }
+                    }
+                    .disabled(audioDevices.isEmpty)
+                    .onChange(of: selectedDevice) { newDevice in
+                        if let device = newDevice {
+                            preferencesManager.selectedAudioDeviceID = device.id
+                        } else {
+                            preferencesManager.selectedAudioDeviceID = ""
+                        }
+                    }
+                    
+                    if audioDevices.isEmpty {
+                        Text("No audio input devices found")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                    }
                 }
             }
         }
         .padding()
+        .onAppear {
+            loadAudioDevices()
+        }
+    }
+    
+    private func loadAudioDevices() {
+        audioDevices = AudioManager.shared.getAudioDevices()
+        
+        // Set default device if nothing is selected
+        if preferencesManager.selectedAudioDeviceID.isEmpty && !audioDevices.isEmpty {
+            if let defaultDevice = AudioManager.shared.getDefaultInputDevice() {
+                selectedDevice = defaultDevice
+                preferencesManager.selectedAudioDeviceID = defaultDevice.id
+            } else {
+                selectedDevice = audioDevices.first
+                preferencesManager.selectedAudioDeviceID = audioDevices.first?.id ?? ""
+            }
+        } else {
+            selectedDevice = audioDevices.first(where: { $0.id == preferencesManager.selectedAudioDeviceID })
+        }
     }
 }
 
@@ -82,15 +125,38 @@ struct InputTrackingSettingsView: View {
         Form {
             Section("Mouse Tracking") {
                 Toggle("Record Mouse Movements", isOn: $preferencesManager.recordMouseMovements)
+                
+                if preferencesManager.recordMouseMovements {
+                    Text("Mouse movements and clicks will be saved in JSON format with tap/hold-release detection (200ms threshold)")
+                        .foregroundColor(.secondary)
+                        .font(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             
             Section("Keyboard Tracking") {
                 Toggle("Record Keystrokes", isOn: $preferencesManager.recordKeystrokes)
                 
                 if preferencesManager.recordKeystrokes {
-                    Text("Keystrokes will be saved in WebVTT format")
+                    Text("Keystrokes will be saved in JSON format with tap/hold-release detection (200ms threshold)")
                         .foregroundColor(.secondary)
                         .font(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                    Text("Sensitive input (passwords) will be masked")
+                        .foregroundColor(.secondary)
+                        .font(.caption)
+                }
+            }
+            
+            // Permissions information
+            Section("Permissions Required") {
+                Text("Input tracking requires Accessibility permissions")
+                    .foregroundColor(.secondary)
+                    .font(.caption)
+                
+                Button("Open System Settings") {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
                 }
             }
         }

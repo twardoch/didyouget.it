@@ -1,38 +1,33 @@
 ---
-description: Handles context-specific file inclusion via @ references in the indexing system
-globs: .cursorindexingignore,**/@*
+description: Handles resolution of @ references and context-specific inclusions within recording operations
+globs: **/*.swift,**/*.swift
 alwaysApply: false
 ---
 
 
 # reference-resolution
 
-The reference resolution system implements selective content inclusion through @ references within the indexing system. This allows for granular control over what content gets indexed, even when it exists within excluded directories.
+Based on the provided specification, there is a basic reference resolution system in place for screen recordings:
 
-### Core Reference Resolution Logic
-- Processes @ references to include specific contexts
-- Overrides general exclusion rules in `.cursorindexingignore`
-- Enables contextual inclusion of otherwise excluded content
+Core Reference Components:
 
-### Implementation Details
-File: `.cursorindexingignore`
-```
-Importance Score: 85 - Critical for contextual content management
-```
+1. Session Reference Tracking:
+- Each recording session generates a unique identifier 
+- Uses timestamp-based references in format: DidYouGet_YYYY-MM-DD_HH-MM-SS
+- Recording Manager maintains contextual links between active captures and reference IDs
 
-The reference system enables:
-1. Context-specific inclusions within excluded directories
-2. Selective override of general exclusion rules
-3. Granular control over indexed content through @ mentions
+2. Input Source References:
+- Maps device references to corresponding input streams
+- Associates audio input channels with specific recording sessions
+- Links mouse/keyboard capture events to their parent recording context
 
-### Integration Points
-- Works in conjunction with the `.specstory/` directory exclusion rule
-- Provides exceptions to the auto-save file exclusion mechanism
-- Enables targeted indexing of specific contexts
+Importance Scores:
+- Session Reference Management: 85 - Critical for maintaining recording context
+- Input Reference Resolution: 75 - Essential for input source mapping
+- Timestamp Reference System: 65 - Supports unique identification
 
-### Business Impact
-- Maintains efficient indexing while allowing specific content inclusion
-- Supports context-aware document management
-- Enables flexible content accessibility within excluded directories
+Relevant Files:
+- DidYouGet/DidYouGet/Models/RecordingManager.swift
+- DidYouGet/DidYouGet/Models/PreferencesManager.swift
 
 $END$

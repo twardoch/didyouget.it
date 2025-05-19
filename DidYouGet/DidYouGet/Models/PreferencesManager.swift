@@ -5,6 +5,7 @@ class PreferencesManager: ObservableObject {
     @AppStorage("frameRate") var frameRate: Int = 60
     @AppStorage("videoQuality") var videoQuality: VideoQuality = .high
     @AppStorage("recordAudio") var recordAudio: Bool = false
+    @AppStorage("mixAudioWithVideo") var mixAudioWithVideo: Bool = true
     @AppStorage("recordMouseMovements") var recordMouseMovements: Bool = false
     @AppStorage("recordKeystrokes") var recordKeystrokes: Bool = false
     @AppStorage("defaultSaveLocation") var defaultSaveLocation: String = ""
