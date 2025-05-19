@@ -6,7 +6,7 @@ I want a fast performant app `Did You Get It` (Mac identifier it.didyouget.mac, 
 - Record the configurable area on the selectable screen, as a 60 FPS full-resolution (Retina) video
 - If requested, record the audio from a selectable audio device
 - If requested, record the mouse movements and clicks
-- If requested, record the keyboard strokes in the WebVTT format
+- If requested, record the keyboard strokes in JSON format with tap/hold-release detection
 - Save the recorded video, audio, and mouse/keyboard strokes to a file. If requested, the audio should be mixed with the video.
 
 Tasks: 

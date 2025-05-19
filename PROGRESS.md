@@ -80,14 +80,18 @@
 - [ ] Implement CGEventTap for mouse events
 - [ ] Create mouse movement recorder
 - [ ] Add click event detection
-- [ ] Design JSON output format
+- [ ] Add hold/release event detection with threshold
+- [ ] Implement drag tracking during mouse hold
+- [ ] Design JSON output format with event types
 - [ ] Implement mouse cursor overlay option
 
 ### Keyboard Tracking
 - [ ] Implement keyboard event monitoring
-- [ ] Create WebVTT formatter
+- [ ] Create JSON formatter with event types
+- [ ] Distinguish tap vs hold-release events (200ms threshold)
 - [ ] Add privacy masking for sensitive input
 - [ ] Implement keystroke timing
+- [ ] Track modifier keys separately
 - [ ] Create keyboard event queue
 
 ### Data Synchronization
@@ -113,8 +117,8 @@
 
 ### Data Export
 - [ ] Save video with embedded audio
-- [ ] Export mouse data as JSON
-- [ ] Export keyboard data as WebVTT
+- [ ] Export mouse data as JSON with event types
+- [ ] Export keyboard data as JSON with tap/hold-release events
 - [ ] Create combined export option
 - [ ] Implement file cleanup
 

@@ -82,7 +82,7 @@ brew install --cask didyouget
 
 - **Audio**: Toggle audio recording in the main menu
 - **Mouse Tracking**: Enable to record mouse movements and clicks
-- **Keyboard Tracking**: Enable to capture keystrokes in WebVTT format
+- **Keyboard Tracking**: Enable to capture keystrokes with tap/hold-release detection
 - **Quality**: Choose from Low, Medium, High, or Lossless in preferences
 
 ### Output Files
@@ -93,8 +93,8 @@ DidYouGet_YYYY-MM-DD_HH-MM-SS.mp4
 ```
 
 Additional files may be created:
-- `.json` - Mouse movement and click data
-- `.vtt` - Keyboard input in WebVTT format
+- `.json` - Mouse movement, clicks, and drag data with event types
+- `.json` - Keyboard input with tap/hold-release events
 
 ## Privacy & Security
 

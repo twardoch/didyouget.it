@@ -33,8 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 - Audio recording from selectable devices
-- Mouse movement and click tracking
-- Keyboard input recording in WebVTT format
+- Mouse movement and click tracking with tap/hold-release detection
+- Keyboard input recording in JSON format with tap/hold-release events
 - Area selection for recording specific screen regions
 - File output with configurable quality presets
 - Keyboard shortcuts for recording control

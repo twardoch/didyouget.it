@@ -28,14 +28,24 @@
 ### 3. Mouse Tracking (Optional)
 - **Movement**: Record all mouse movements within the recording area
 - **Clicks**: Capture left/right clicks with timestamps
-- **Format**: JSON or custom lightweight format
+- **Format**: JSON format with event types
 - **Overlay**: Option to visualize mouse cursor in the video
+- **Event Types**:
+  - "move": Mouse position changes
+  - "click": Mouse button pressed and released within threshold (< 200ms)
+  - "press": Mouse button pressed with held timestamp
+  - "release": Mouse button released with release timestamp
+  - "drag": Mouse movement while button is held
 
 ### 4. Keyboard Recording (Optional)
 - **Capture**: Record all keyboard strokes during recording
-- **Format**: WebVTT format for compatibility
+- **Format**: JSON format with event types (tap vs hold-release)
 - **Privacy**: Ability to mask sensitive input (passwords)
 - **Timestamps**: Precise timing synchronized with video
+- **Event Types**: 
+  - "tap": Key pressed and released within threshold (< 200ms)
+  - "hold": Key pressed with held timestamp
+  - "release": Key released with release timestamp
 
 ### 5. Output Management
 - **File Format**: MP4 container for video/audio
@@ -140,8 +150,9 @@ Resolution: Native display resolution
 ### Mouse Data Format (JSON)
 ```json
 {
-  "version": "1.0",
+  "version": "2.0",
   "recording_start": "2024-01-01T00:00:00Z",
+  "threshold_ms": 200,
   "events": [
     {
       "timestamp": 0.0,
@@ -155,29 +166,80 @@ Resolution: Native display resolution
       "button": "left",
       "x": 150,
       "y": 250
+    },
+    {
+      "timestamp": 2.0,
+      "type": "press",
+      "button": "left",
+      "x": 200,
+      "y": 300,
+      "held_at": 2.0
+    },
+    {
+      "timestamp": 2.5,
+      "type": "drag",
+      "x": 250,
+      "y": 350
+    },
+    {
+      "timestamp": 3.0,
+      "type": "release",
+      "button": "left",
+      "x": 300,
+      "y": 400,
+      "released_at": 3.0
     }
   ]
 }
 ```
 
-### Keyboard Data Format (WebVTT)
-```
-WEBVTT
-
-00:00:00.000 --> 00:00:00.500
-KEY: H
-
-00:00:00.600 --> 00:00:01.100
-KEY: e
-
-00:00:01.200 --> 00:00:01.700
-KEY: l
-
-00:00:01.800 --> 00:00:02.300
-KEY: l
-
-00:00:02.400 --> 00:00:02.900
-KEY: o
+### Keyboard Data Format (JSON)
+```json
+{
+  "version": "2.0",
+  "recording_start": "2024-01-01T00:00:00Z",
+  "threshold_ms": 200,
+  "events": [
+    {
+      "timestamp": 0.0,
+      "type": "tap",
+      "key": "H",
+      "modifiers": []
+    },
+    {
+      "timestamp": 0.6,
+      "type": "tap",
+      "key": "e",
+      "modifiers": []
+    },
+    {
+      "timestamp": 1.2,
+      "type": "hold",
+      "key": "Shift",
+      "modifiers": [],
+      "held_at": 1.2
+    },
+    {
+      "timestamp": 1.3,
+      "type": "tap",
+      "key": "l",
+      "modifiers": ["Shift"]
+    },
+    {
+      "timestamp": 1.8,
+      "type": "release",
+      "key": "Shift",
+      "modifiers": [],
+      "released_at": 1.8
+    },
+    {
+      "timestamp": 2.0,
+      "type": "tap",
+      "key": "o",
+      "modifiers": []
+    }
+  ]
+}
 ```
 
 ## Error Handling
