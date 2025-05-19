@@ -1,6 +1,7 @@
 import SwiftUI
 
 @main
+@available(macOS 13.0, *)
 struct DidYouGetApp: App {
     @StateObject private var recordingManager = RecordingManager()
     @StateObject private var preferencesManager = PreferencesManager()

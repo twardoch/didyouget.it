@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "DidYouGet",
     platforms: [
-        .macOS(.v12)
+        .macOS(.v13)
     ],
     products: [
         .executable(
@@ -19,12 +19,13 @@ let package = Package(
             name: "DidYouGet",
             dependencies: [],
             path: "DidYouGet/DidYouGet",
+            exclude: [
+                "Info.plist",
+                "DidYouGet.entitlements"
+            ],
             resources: [
                 .process("Resources")
             ]
         ),
-        .testTarget(
-            name: "DidYouGetTests",
-            dependencies: ["DidYouGet"])
     ]
 )

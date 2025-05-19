@@ -1,5 +1,7 @@
 import SwiftUI
+import ScreenCaptureKit
 
+@available(macOS 12.3, *)
 struct ContentView: View {
     @EnvironmentObject var recordingManager: RecordingManager
     @EnvironmentObject var preferencesManager: PreferencesManager
@@ -65,6 +67,42 @@ struct ContentView: View {
             
             Divider()
             
+            // Screen/Window selection
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Capture Source")
+                    .font(.headline)
+                
+                Picker("Capture Type", selection: $recordingManager.captureType) {
+                    Text("Display").tag(RecordingManager.CaptureType.display)
+                    Text("Window").tag(RecordingManager.CaptureType.window)
+                    Text("Area").tag(RecordingManager.CaptureType.area)
+                }
+                .pickerStyle(.segmented)
+                
+                if recordingManager.captureType == .display {
+                    if !recordingManager.availableDisplays.isEmpty {
+                        Picker("Display", selection: $recordingManager.selectedScreen) {
+                            ForEach(recordingManager.availableDisplays, id: \.displayID) { display in
+                                Text("Display \(display.displayID)")
+                                    .tag(display as SCDisplay?)
+                            }
+                        }
+                    }
+                } else if recordingManager.captureType == .window {
+                    if !recordingManager.availableWindows.isEmpty {
+                        Picker("Window", selection: $recordingManager.selectedWindow) {
+                            ForEach(recordingManager.availableWindows, id: \.windowID) { window in
+                                Text(window.title ?? "Window \(window.windowID)")
+                                    .tag(window as SCWindow?)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal)
+            
+            Divider()
+            
             // Quick settings
             VStack(alignment: .leading, spacing: 10) {
                 Toggle("Record Audio", isOn: $preferencesManager.recordAudio)
@@ -89,7 +127,7 @@ struct ContentView: View {
             }
             .padding(.horizontal)
         }
-        .frame(width: 300)
+        .frame(width: 350)
         .padding()
     }
     
