@@ -45,6 +45,7 @@ class RecordingManager: ObservableObject {
     private var audioOutputURL: URL?
     private var mouseTrackingURL: URL?
     private var keyboardTrackingURL: URL?
+    private var recordingFolderURL: URL?
     
     // Input tracking
     private var mouseTracker = MouseTracker()
@@ -227,11 +228,12 @@ class RecordingManager: ObservableObject {
                 recordMouseMovements: preferences.recordMouseMovements,
                 recordKeystrokes: preferences.recordKeystrokes
             )
-            
+
             videoOutputURL = paths.videoURL
             audioOutputURL = paths.audioURL
             mouseTrackingURL = paths.mouseTrackingURL
             keyboardTrackingURL = paths.keyboardTrackingURL
+            recordingFolderURL = paths.folderURL
             
             // Store the video URL string for persistence
             if let videoURL = videoOutputURL {
@@ -508,8 +510,9 @@ class RecordingManager: ObservableObject {
         )
 
         // Remove recording directory if no files were produced
-        if let folder = videoOutputURL?.deletingLastPathComponent() {
+        if let folder = recordingFolderURL {
             OutputFileManager.cleanupFolderIfEmpty(folder)
+            recordingFolderURL = nil
         }
         
         print("Recording stopped successfully")
@@ -596,6 +599,10 @@ class RecordingManager: ObservableObject {
         audioOutputURL = nil
         mouseTrackingURL = nil
         keyboardTrackingURL = nil
+        if let folder = recordingFolderURL {
+            OutputFileManager.cleanupFolderIfEmpty(folder)
+        }
+        recordingFolderURL = nil
         
         // Reset start time
         startTime = nil

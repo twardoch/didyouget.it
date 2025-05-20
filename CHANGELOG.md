@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed stop button not returning to Record button state after stopping recording
 - Fixed issue where the app created empty folders with no files inside
 - Fixed critical issue with zero-length video files (.mov) while maintaining mouse and keyboard tracking
+- Added folder cleanup during failed recording setup to avoid leftover directories
 - Fixed stop-recording state bug that prevented timer from stopping and left empty folders
 - Removed leftover empty recording directories and automatically delete zero-length video files
 - Resolved problems with invalid sample buffer timestamps from ScreenCaptureKit
