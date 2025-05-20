@@ -43,6 +43,7 @@ class RecordingManager: ObservableObject {
     private var audioOutputURL: URL?
     private var mouseTrackingURL: URL?
     private var keyboardTrackingURL: URL?
+    private var streamConfig: SCStreamConfiguration?
     
     // Input tracking
     private var mouseTracker = MouseTracker()
@@ -551,25 +552,27 @@ class RecordingManager: ObservableObject {
         
         // Create stream configuration
         print("Configuring stream settings...")
-        let streamConfig = SCStreamConfiguration()
-        streamConfig.queueDepth = 5 // Increase queue depth for smoother capture
+        let scConfig = SCStreamConfiguration()
+        self.streamConfig = scConfig // Store for later use
+        
+        scConfig.queueDepth = 5 // Increase queue depth for smoother capture
         
         // Set initial dimensions to HD as default
-        streamConfig.width = 1920
-        streamConfig.height = 1080
+        scConfig.width = 1920
+        scConfig.height = 1080
         
         // Set frame rate based on preferences
         let frameRate = preferencesManager?.frameRate ?? 60
         print("Setting frame rate to \(frameRate) FPS")
-        streamConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(frameRate))
+        scConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(frameRate))
         
         // Configure pixel format (BGRA is standard for macOS screen capture)
-        streamConfig.pixelFormat = kCVPixelFormatType_32BGRA
-        streamConfig.scalesToFit = true
+        scConfig.pixelFormat = kCVPixelFormatType_32BGRA
+        scConfig.scalesToFit = true
         
         // Set aspect ratio preservation if available
         if #available(macOS 14.0, *) {
-            streamConfig.preservesAspectRatio = true
+            scConfig.preservesAspectRatio = true
             print("Aspect ratio preservation enabled (macOS 14+)")
         } else {
             print("Aspect ratio preservation not available (requires macOS 14+)")
@@ -578,10 +581,10 @@ class RecordingManager: ObservableObject {
         // Configure audio capture if needed
         if preferencesManager?.recordAudio == true {
             print("Configuring audio capture...")
-            streamConfig.capturesAudio = true
+            scConfig.capturesAudio = true
             
             // Configure audio settings - exclude app's own audio
-            streamConfig.excludesCurrentProcessAudio = true
+            scConfig.excludesCurrentProcessAudio = true
             print("Audio capture enabled, excluding current process audio")
         }
         
@@ -600,8 +603,8 @@ class RecordingManager: ObservableObject {
             let screenHeight = Int(display.frame.height)
             let scale = 2 // Retina scale factor
             
-            streamConfig.width = screenWidth * scale
-            streamConfig.height = screenHeight * scale
+            scConfig.width = screenWidth * scale
+            scConfig.height = screenHeight * scale
             print("Capturing display \(display.displayID) at \(screenWidth * scale) x \(screenHeight * scale) (with Retina scaling)")
             
             // Create content filter for the display with no window exclusions
@@ -617,8 +620,8 @@ class RecordingManager: ObservableObject {
             let windowHeight = Int(window.frame.height)
             let scale = 2 // Retina scale factor
             
-            streamConfig.width = windowWidth * scale
-            streamConfig.height = windowHeight * scale
+            scConfig.width = windowWidth * scale
+            scConfig.height = windowHeight * scale
             print("Capturing window '\(window.title ?? "Untitled")' at \(windowWidth * scale) x \(windowHeight * scale) (with Retina scaling)")
             
             // Create content filter for the specific window
@@ -635,8 +638,8 @@ class RecordingManager: ObservableObject {
             let scale = 2 // Retina scale factor
             
             // IMPORTANT: The streamConfig dimensions MUST match the area for proper recording
-            streamConfig.width = areaWidth * scale
-            streamConfig.height = areaHeight * scale
+            scConfig.width = areaWidth * scale
+            scConfig.height = areaHeight * scale
             print("Capturing area at \(areaWidth * scale) x \(areaHeight * scale) (with Retina scaling)")
             
             // For area selection we need a specific content filter
@@ -651,7 +654,7 @@ class RecordingManager: ObservableObject {
         
         // Create the stream with the configured filter and settings
         print("Creating SCStream with configured filter and settings")
-        captureSession = SCStream(filter: contentFilter, configuration: streamConfig, delegate: nil)
+        captureSession = SCStream(filter: contentFilter, configuration: scConfig, delegate: nil)
         
         // Make sure existing files at destination URLs are removed to avoid collision issues
         // This ensures we have a clean slate for writing
@@ -757,8 +760,8 @@ class RecordingManager: ObservableObject {
         // Configure video settings with appropriate parameters
         let videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: streamConfig.width,
-            AVVideoHeightKey: streamConfig.height,
+            AVVideoWidthKey: streamConfig?.width ?? 1920,
+            AVVideoHeightKey: streamConfig?.height ?? 1080,
             AVVideoCompressionPropertiesKey: [
                 AVVideoAverageBitRateKey: bitrate,
                 AVVideoExpectedSourceFrameRateKey: frameRate,
@@ -769,7 +772,7 @@ class RecordingManager: ObservableObject {
         
         // For area captures, log info about settings
         if captureType == .area, let area = recordingArea {
-            print("Video settings for area capture: width=\(streamConfig.width), height=\(streamConfig.height)")
+            print("Video settings for area capture: width=\(streamConfig?.width ?? 0), height=\(streamConfig?.height ?? 0)")
             print("Selected area: \(Int(area.width)) x \(Int(area.height)) at (\(Int(area.origin.x)), \(Int(area.origin.y)))")
         }
         
@@ -901,20 +904,42 @@ class RecordingManager: ObservableObject {
                 return
             }
             
-            // Use Task with high priority to dispatch back to the main actor
-            // This is critical for handling frames in real-time
-            Task(priority: .userInitiated) { @MainActor in
-                switch type {
-                case .screen:
-                    // Process screen frames immediately
-                    self.processSampleBuffer(sampleBuffer)
-                case .audio:
-                    // Process audio samples immediately
-                    self.processAudioSampleBuffer(sampleBuffer)
-                @unknown default:
-                    print("Unknown sample type, cannot process")
-                    break
+            // Create a local copy of the buffer to avoid potential threading issues
+            // This is critical for preventing buffer loss during transfers between queues
+            var newBuffer: CMSampleBuffer?
+            
+            // Clone the sample buffer to ensure it remains valid
+            let status = CMSampleBufferCreateCopy(allocator: kCFAllocatorDefault, sampleBuffer: sampleBuffer, sampleBufferOut: &newBuffer)
+            
+            if status != noErr || newBuffer == nil {
+                print("ERROR: Failed to create copy of sample buffer")
+                // Fallback to using the original buffer
+                newBuffer = sampleBuffer
+            }
+            
+            // Ensure buffer is valid
+            if let safeSampleBuffer = newBuffer, CMSampleBufferIsValid(safeSampleBuffer) {
+                // Use Task with high priority to dispatch back to the main actor
+                // This is critical for handling frames in real-time
+                Task(priority: .userInitiated) { @MainActor in
+                    switch type {
+                    case .screen:
+                        // Process screen frames immediately and report success/failure
+                        if !self.processSampleBuffer(safeSampleBuffer) {
+                            print("ERROR: Failed to process video frame #\(self.videoFrameLogCounter)")
+                        }
+                    case .audio:
+                        // Process audio samples immediately
+                        if !self.processAudioSampleBuffer(safeSampleBuffer) {
+                            print("ERROR: Failed to process audio sample #\(self.audioSampleLogCounter)")
+                        }
+                    @unknown default:
+                        print("Unknown sample type, cannot process")
+                        break
+                    }
                 }
+            } else {
+                print("ERROR: Invalid sample buffer received from stream")
             }
         }
         
@@ -973,7 +998,7 @@ class RecordingManager: ObservableObject {
     }
     
     @MainActor
-    private func processSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
+    private func processSampleBuffer(_ sampleBuffer: CMSampleBuffer) -> Bool {
         // Debug logging to track frequency of frame arrivals
         videoFrameLogCounter += 1
         
@@ -994,13 +1019,13 @@ class RecordingManager: ObservableObject {
             if shouldLogDetail {
                 print("VIDEO FRAME: Skipping - recording is paused")
             }
-            return
+            return false
         }
         
         // Before using a potentially less reliable buffer, validate it
         guard CMSampleBufferDataIsReady(sampleBuffer) else {
             print("ERROR: Video sample buffer data is not ready")
-            return
+            return false
         }
         
         // Get additional buffer info for debugging
@@ -1018,22 +1043,22 @@ class RecordingManager: ObservableObject {
         // Access these properties on the main actor
         guard let videoInput = videoInput else {
             print("ERROR: Video input is nil")
-            return
+            return false
         }
         
         guard let writer = videoAssetWriter else {
             print("ERROR: Video asset writer is nil")
-            return
+            return false
         }
         
         guard writer.status == .writing else {
             print("ERROR: Writer is not in writing state. Current state: \(writer.status.rawValue)")
-            return
+            return false
         }
         
         guard videoInput.isReadyForMoreMediaData else {
             print("WARNING: Video input is not ready for more data")
-            return
+            return false
         }
         
         // Get timing info from the sample buffer
@@ -1042,7 +1067,32 @@ class RecordingManager: ObservableObject {
             // Skip samples with discontinuity flag - using string literal "discontinuity"
             if let discontinuity = attachments["discontinuity"] as? Bool, discontinuity {
                 print("WARNING: Skipping discontinuous sample buffer")
-                return
+                return false
+            }
+        }
+        
+        // Debug AVAssetWriter status before attempting to append
+        print("WRITER DEBUG: Before append - Status: \(writer.status.rawValue), Input ready: \(videoInput.isReadyForMoreMediaData)")
+        
+        // Force flush any pending writes
+        if videoFramesProcessed > 0 && videoFramesProcessed % 100 == 0 {
+            print("WRITER DEBUG: Performing explicit file write flush")
+            do {
+                _ = try FileManager.default.attributesOfItem(atPath: writer.outputURL.path)
+            } catch {
+                print("WRITER DEBUG: File not written yet or error: \(error.localizedDescription)")
+            }
+        }
+        
+        // Check buffer validity details
+        let presentationTimeStamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        print("BUFFER DEBUG: PTS: \(presentationTimeStamp.seconds), Buffer valid: \(CMSampleBufferIsValid(sampleBuffer) ? "Yes" : "No")")
+        
+        // Explicit check for frame rate
+        if let attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [Any],
+           let attachments = attachmentsArray.first as? [String: Any] {
+            if let fps = attachments["FPS"] as? Float {
+                print("BUFFER DEBUG: Framerate: \(fps) FPS")
             }
         }
         
@@ -1063,9 +1113,45 @@ class RecordingManager: ObservableObject {
             if !videoInput.isReadyForMoreMediaData {
                 print("ERROR: Video input is no longer ready for more data after failed append")
             }
+            
+            // Check buffer timing
+            print("CRITICAL: Buffer timing - PTS=\(presentationTimeStamp.seconds)s, Duration=\(CMSampleBufferGetDuration(sampleBuffer).seconds)s")
+            
+            // Check for common timing issues
+            if presentationTimeStamp.seconds < 0 {
+                print("CRITICAL: Negative presentation timestamp detected!")
+            }
+            
+            if CMTimeCompare(presentationTimeStamp, .zero) < 0 {
+                print("CRITICAL: Presentation timestamp is before zero time!")
+            }
+            
+            // Cannot recover within this session - just log the error
+            print("CRITICAL: Video frame processing failed. This session will likely produce an empty MOV file.")
+            print("CRITICAL: The recommended action is to stop recording and start a new session.")
+            
+            // Mark that we've had a critical error
+            videoFramesProcessed = -1 // Use negative value as an error indicator
+            
+            return false
         } else {
             // Keep track of processed frames for diagnostics
             videoFramesProcessed += 1
+            
+            if videoFramesProcessed == 1 {
+                print("✓ VIDEO SUCCESS: First frame processed successfully!")
+                
+                // Immediate file size check after first frame
+                do {
+                    let fileManager = FileManager.default
+                    let attributes = try fileManager.attributesOfItem(atPath: writer.outputURL.path)
+                    if let fileSize = attributes[.size] as? UInt64 {
+                        print("✓ VIDEO FILE: Size after first frame = \(fileSize) bytes")
+                    }
+                } catch {
+                    print("WARNING: Unable to check video file size: \(error.localizedDescription)")
+                }
+            }
             
             // Log successful append periodically
             if videoFramesProcessed % 60 == 0 {
@@ -1083,11 +1169,13 @@ class RecordingManager: ObservableObject {
                     print("WARNING: Unable to check video file size: \(error.localizedDescription)")
                 }
             }
+            
+            return true
         }
     }
     
     @MainActor
-    private func processAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
+    private func processAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer) -> Bool {
         // Debug logging to track frequency of audio samples
         audioSampleLogCounter += 1
         
@@ -1108,13 +1196,13 @@ class RecordingManager: ObservableObject {
             if shouldLogDetail {
                 print("AUDIO SAMPLE: Skipping - recording is paused")
             }
-            return
+            return false
         }
         
         // Validate the sample buffer
         guard CMSampleBufferDataIsReady(sampleBuffer) else {
             print("ERROR: Audio sample buffer data is not ready")
-            return
+            return false
         }
         
         // Get additional buffer info for debugging
@@ -1133,12 +1221,12 @@ class RecordingManager: ObservableObject {
         // Access properties directly on the main actor
         guard let audioInput = audioInput else {
             print("ERROR: Audio input is nil")
-            return
+            return false
         }
         
         guard audioInput.isReadyForMoreMediaData else {
             print("WARNING: Audio input is not ready for more data")
-            return
+            return false
         }
         
         // Check for discontinuity flags
@@ -1147,14 +1235,14 @@ class RecordingManager: ObservableObject {
             // Skip samples with discontinuity flag - using string literal "discontinuity"
             if let discontinuity = attachments["discontinuity"] as? Bool, discontinuity {
                 print("WARNING: Skipping discontinuous audio sample buffer")
-                return
+                return false
             }
         }
         
         // Get the mixing preference from the current state
         guard let preferences = preferencesManager else {
             print("ERROR: PreferencesManager is nil")
-            return
+            return false
         }
         
         let isMixingAudio = preferences.mixAudioWithVideo
@@ -1222,7 +1310,10 @@ class RecordingManager: ObservableObject {
                     }
                 }
             }
+            
+            return success
         }
+        return false
     }
     
     // Make preferencesManager internal for access in DidYouGetApp for diagnostics
@@ -1353,12 +1444,55 @@ class RecordingManager: ObservableObject {
         
         if let writer = videoAssetWriter {
             print("Finalizing video file...")
+            
+            // Check file size BEFORE finalization
+            do {
+                let fileManager = FileManager.default
+                let outputURL = writer.outputURL
+                if fileManager.fileExists(atPath: outputURL.path) {
+                    let attrs = try fileManager.attributesOfItem(atPath: outputURL.path)
+                    if let fileSize = attrs[.size] as? UInt64 {
+                        print("PRE-FINALIZE VIDEO FILE SIZE: \(fileSize) bytes")
+                        
+                        if fileSize == 0 {
+                            print("CRITICAL WARNING: Video file is empty (0 bytes) before finalization!")
+                            
+                            // Try to dump detailed writer state for debugging
+                            print("WRITER STATE DUMP:")
+                            print("  - Status: \(writer.status.rawValue)")
+                            print("  - Error: \(writer.error?.localizedDescription ?? "nil")")
+                            print("  - Video frames processed: \(videoFramesProcessed)")
+                        } else {
+                            print("GOOD NEWS: Video file has content before finalization!")
+                        }
+                    }
+                } else {
+                    print("WARNING: Video file does not exist at path: \(outputURL.path)")
+                }
+            } catch {
+                print("WARNING: Error checking video file before finalization: \(error)")
+            }
+            
             await writer.finishWriting()
             if writer.status == .failed {
                 videoWriteError = writer.error
                 print("ERROR: Video asset writer failed: \(String(describing: writer.error))")
             } else if writer.status == .completed {
                 print("Video successfully finalized")
+                
+                // Check file size AFTER finalization
+                let outputURL = writer.outputURL
+                do {
+                    let fileManager = FileManager.default
+                    if fileManager.fileExists(atPath: outputURL.path) {
+                        let attrs = try fileManager.attributesOfItem(atPath: outputURL.path)
+                        if let fileSize = attrs[.size] as? UInt64 {
+                            print("POST-FINALIZE VIDEO FILE SIZE: \(fileSize) bytes")
+                        }
+                    }
+                } catch {
+                    print("WARNING: Error checking video file after finalization: \(error)")
+                }
             } else {
                 print("WARNING: Unexpected video writer status: \(writer.status.rawValue)")
             }
