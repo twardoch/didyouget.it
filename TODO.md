@@ -1,32 +1,39 @@
 CURRENT ISSUES (as of YYYY-MM-DD HH:MM):
 
-**Primary Issue: Recording does not fully initialize or run.**
+**Primary Issue: No video frames are being delivered by ScreenCaptureKit.**
 Symptoms observed from the last run:
-- UI sticks on "Stop" button (meaning `isRecording` becomes true).
-- Timer does not tick (stuck at 0:00.0).
-- Output JSON files for mouse/keyboard are empty (`[]`).
-- Output MOV file is minimal size (e.g., 11 bytes), indicating no video data.
+- Recording initialization completes, timer runs, UI is responsive.
+- Input tracking (mouse/keyboard JSON) WORKS when Accessibility permissions are granted.
+- Output MOV file is 0 bytes because no video frames are processed (`VideoProcessor.videoFramesProcessed` is 0).
+- Debug logs show that `SCStreamFrameOutput.stream(_:didOutputSampleBuffer:ofType:)` (our custom class method that should receive frames from SCStream) is NOT being called for `.screen` type.
 
 **Diagnosis from logs:**
-- `RecordingManager.startRecordingAsync()` sets `isRecording = true` early on.
-- However, the function does not seem to complete its execution.
-- Specifically, log messages related to timer setup, starting `SCStream`, starting `captureSessionManager.startCapture()`, and input tracking are MISSING.
-- The last observed log message from the `startRecordingAsync` sequence is related to video configuration ("VIDEO CONFIG...").
-- No explicit error messages (like "ERROR: Failed during recording setup") are printed from the main `catch` block in `startRecordingAsync`.
+- `SCStream.startCapture()` reports success.
+- `SCStreamDelegate.stream(_:didStopWithError:)` is NOT called, indicating no explicit stream error.
+- The issue seems to be that `SCStream` silently fails to deliver frames after starting.
 
 **Suspicion:**
-- A call *after* "VIDEO CONFIG..." log and *before* timer setup (e.g., `videoProcessor.startWriting()`, `captureSessionManager.createStream()`) is either crashing, deadlocking, or throwing an unhandled exception that bypasses the main catch block, or causing a silent exit from the function.
+- A subtle issue with `SCContentFilter` or `SCStreamConfiguration` that doesn't cause an error at setup but prevents frame generation/delivery.
+- An underlying `ScreenCaptureKit` or OS-level issue specific to the current environment or display being captured.
 
 **Next Steps:**
-- Added detailed logging within `RecordingManager.startRecordingAsync` to pinpoint the exact line of failure.
-- Analyze the new logs after running with this detailed logging.
+- Added a prominent print statement at the absolute beginning of `SCStreamFrameOutput.stream(_:didOutputSampleBuffer:ofType:)`.
+- Analyze logs after the next run: if this new print doesn't appear for `.screen` type, it confirms SCStream is not calling our handler.
+- If no frames, consider: 
+    - Simplifying `SCStreamConfiguration` further (e.g., lower resolution, different pixel format if possible, though BGRA is standard).
+    - Trying to capture a different `SCDisplay` if available.
+    - Consulting `ScreenCaptureKit` documentation for reasons why a stream might start but not deliver frames.
+
+**Secondary Issue: Input tracking files (JSON) require manual permission.**
+- Status: Works correctly IF user grants Accessibility permission in System Settings.
+- Action: This is expected behavior. Consider adding in-app guidance or a check that directs the user to System Settings if permission is denied and tracking is enabled.
 
 ---
-Original issue list (likely all symptoms of the primary issue above):
-- When I push Record and I then click Stop, the Record button does not appear, it sticks with "Stop" 
-- When I push Record, the timer does not tick, stays at 0
-- The final JSONs are just `[]` despite the fact that I've moved the pointer and pressed keys
-- The final MOV is 11 bytes
+Original issue list (mostly resolved or addressed):
+- Record button behavior: FIXED
+- Timer not ticking: FIXED
+- JSONs empty: Explained by Accessibility (works if granted)
+- MOV empty: Current primary issue (no frames delivered)
 ---
 
 ```

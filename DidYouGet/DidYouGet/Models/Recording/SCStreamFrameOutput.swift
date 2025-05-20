@@ -18,6 +18,7 @@ class SCStreamFrameOutput: NSObject, SCStreamOutput {
     }
     
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        print("<<<< FRAME RECEIVED BY SCStreamFrameOutput (custom class) - Type: \(type) >>>>")
         // Perform basic buffer validation before proceeding
         guard CMSampleBufferIsValid(sampleBuffer) else {
             print("ERROR: Invalid sample buffer received from SCStream - skipping")

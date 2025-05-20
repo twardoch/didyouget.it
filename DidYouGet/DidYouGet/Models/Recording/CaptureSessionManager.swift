@@ -6,7 +6,7 @@ import CoreMedia
 
 @available(macOS 12.3, *)
 @MainActor
-class CaptureSessionManager {
+class CaptureSessionManager: NSObject, SCStreamDelegate {
     // Capture types
     enum CaptureType {
         case display
@@ -25,8 +25,9 @@ class CaptureSessionManager {
     // The handler to process sample buffers
     private var sampleBufferHandler: ((CMSampleBuffer, RecordingManager.SCStreamType) -> Void)?
     
-    init() {
+    override init() {
         print("CaptureSessionManager initialized")
+        super.init()
     }
     
     func configureCaptureSession(
@@ -167,32 +168,42 @@ class CaptureSessionManager {
     
     func createStream(filter: SCContentFilter, config: SCStreamConfiguration, 
                      handler: @escaping (CMSampleBuffer, RecordingManager.SCStreamType) -> Void) throws {
+        // Store the provided handler (which is RecordingManager.handleSampleBuffer)
+        self.sampleBufferHandler = handler 
+        // This sampleBufferHandler is NOT directly used by SCStreamFrameOutput in this version of the code.
+        // Instead, we create a new closure that calls our internal handleStreamOutput,
+        // and that internal handleStreamOutput will then call the stored sampleBufferHandler.
+
         print("Creating SCStream with configured filter and settings")
-        self.sampleBufferHandler = handler
-        
-        captureSession = SCStream(filter: filter, configuration: config, delegate: nil)
+        captureSession = SCStream(filter: filter, configuration: config, delegate: self)
         
         guard let stream = captureSession else {
-            throw NSError(domain: "CaptureSessionManager", code: 1010, 
-                         userInfo: [NSLocalizedDescriptionKey: "Failed to create capture stream"])
+            throw NSError(domain: "CaptureSessionManager", code: 2001, userInfo: [NSLocalizedDescriptionKey: "Failed to create SCStream session"])
         }
         
-        // Create output with handler
-        let output = SCStreamFrameOutput(handler: handler)
+        // This is the handler that our custom SCStreamFrameOutput class will call.
+        // It then calls our internal bridge method handleStreamOutput.
+        let frameOutputHandlerForCustomClass = { [weak self] (sampleBuffer: CMSampleBuffer, mappedType: RecordingManager.SCStreamType) -> Void in
+            // This print confirms our custom class's handler mechanism is working.
+            print("DEBUG_CSM: Bridge handler in createStream called by SCStreamFrameOutput. Type: \(mappedType)")
+            self?.handleStreamOutput(sampleBuffer, mappedType: mappedType)
+        }
         
-        // Create dedicated dispatch queues with high QoS to ensure performance
-        let screenQueue = DispatchQueue(label: "it.didyouget.screenCaptureQueue", qos: .userInteractive)
-        let audioQueue = DispatchQueue(label: "it.didyouget.audioCaptureQueue", qos: .userInteractive)
+        // Initialize our custom SCStreamFrameOutput class with the bridge handler.
+        let customFrameOutput = SCStreamFrameOutput(handler: frameOutputHandlerForCustomClass)
         
-        // Add screen output on the dedicated queue
-        try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: screenQueue)
-        print("Screen capture output added successfully")
+        // Define the queue on which ScreenCaptureKit will call methods on customFrameOutput (i.e., its SCStreamOutput delegate methods)
+        let deliveryQueue = DispatchQueue(label: "com.didyougetit.scstream.deliveryqueue", qos: .userInitiated)
         
-        // Add audio output if needed on separate queue
-        if streamConfig?.capturesAudio == true {
-            // Add audio stream output
-            try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: audioQueue)
-            print("Audio capture output added successfully")
+        // Add our customFrameOutput instance as the output for screen data.
+        try stream.addStreamOutput(customFrameOutput, type: .screen, sampleHandlerQueue: deliveryQueue)
+        print("Screen capture output added successfully (using custom SCStreamFrameOutput)")
+        
+        // Add audio output if needed
+        if config.capturesAudio {
+            print("Configuring audio stream output (using custom SCStreamFrameOutput)...")
+            try stream.addStreamOutput(customFrameOutput, type: .audio, sampleHandlerQueue: deliveryQueue) 
+            print("Audio capture output added successfully (using custom SCStreamFrameOutput)")
         }
     }
     
@@ -295,4 +306,23 @@ class CaptureSessionManager {
         
         print("Dummy capture completed successfully")
     }
+    
+    // This internal method is called by the closure provided to SCStreamFrameOutput
+    private func handleStreamOutput(_ sampleBuffer: CMSampleBuffer, mappedType: RecordingManager.SCStreamType) {
+        guard let finalHandler = sampleBufferHandler else { 
+            print("ERROR_CSM: sampleBufferHandler (RecordingManager.handleSampleBuffer) is nil in handleStreamOutput")
+            return 
+        }
+        // Call the original handler (RecordingManager.handleSampleBuffer)
+        print("DEBUG_CSM: handleStreamOutput forwarding to RecordingManager. Type: \(mappedType)")
+        finalHandler(sampleBuffer, mappedType)
+    }
+    
+    // SCStreamDelegate methods
+    // ... existing extension SCStreamDelegate ...
 }
+
+// Ensure the extension is recognized or move delegate methods into the class if necessary.
+// For now, assuming the separate extension is fine as long as the class declares conformance.
+
+// extension CaptureSessionManager: SCStreamDelegate { ... } // This can be kept if preferred

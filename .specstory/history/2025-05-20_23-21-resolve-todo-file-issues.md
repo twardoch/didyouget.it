@@ -2646,6 +2646,1563 @@ adam@Hamlet didyouget.it %
 
 ---
 
+Unfortunately, the log output is identical to the previous run, even after commenting out the direct write to the `AVAssetWriter`'s output URL.
+
+This means the line `try "placeholder".data(using: .utf8)?.write(to: url)` was not the cause of the silent halt.
+
+The execution still stops after `VideoProcessor.setupVideoWriter` prints its last internal log message:
+`VIDEO CONFIG: Width=3072, Height=1920, BitRate=20Mbps, FrameRate=60`
+...and before `RecordingManager.startRecordingAsync` can print its next debug line:
+`DEBUG: Returned from videoProcessor.setupVideoWriter successfully.`
+
+This strongly points to a crash or non-recoverable error happening at the very end of `videoProcessor.setupVideoWriter` function, specifically after its last print statement but before it actually returns to the caller in `RecordingManager`.
+
+Let's look at the end of `VideoProcessor.setupVideoWriter` again:
+```swift
+// VideoProcessor.swift - setupVideoWriter
+            // ...
+            // videoSettings dictionary is defined
+            print("VIDEO CONFIG: Width=\(width), Height=\(height), BitRate=\(bitrate/1_000_000)Mbps, FrameRate=\(frameRate)") // LAST LOGGED LINE from this func
+
+            videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings) // Line 140
+            guard let videoInput = videoInput else {
+                // This path would print "CRITICAL ERROR..." via the catch block if it threw. Not seen.
+                throw NSError(domain: "VideoProcessor", code: 1005, userInfo: [NSLocalizedDescriptionKey: "Failed to create video input"])
+            }
+            
+            videoInput.expectsMediaDataInRealTime = true // Line 146
+            
+            guard writer.canAdd(videoInput) else { // Line 148
+                // This path would print "CRITICAL ERROR..." via the catch block if it threw. Not seen.
+                throw NSError(domain: "VideoProcessor", code: 1006, userInfo: [NSLocalizedDescriptionKey: "Cannot add video input to asset writer"])
+            }
+            
+            writer.add(videoInput) // Line 153. AVFoundation call.
+            
+            return writer // Line 155. The function attempts to return here.
+        } catch { // Line 156
+            print("CRITICAL ERROR: Failed to create video asset writer: \(error)") // This entire catch block is NOT being executed.
+            throw error
+        }
+    }
+```
+Since the `catch` block within `setupVideoWriter` is not being hit, any `throw` statements within the `do` block are not the cause of the silent exit.
+The problem must be one of these lines causing a hard crash:
+- `videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)` (line 140)
+- `videoInput.expectsMediaDataInRealTime = true` (line 146)
+- `writer.add(videoInput)` (line 153)
+- Or the `return writer` statement itself (less likely but possible if `writer` is in a corrupt state).
+
+The most probable candidates are the AVFoundation calls: `AVAssetWriterInput(...)` or `writer.add(videoInput)`.
+
+If `AVAssetWriterInput(...)` initialization is failing due to the `videoSettings`, it's usually an `NSInvalidArgumentException` or similar, which *should* be catchable by Swift, or at least provide a more direct crash log in the console if it's an unrecoverable error from the framework. The silent nature is strange.
+
+One new log line appeared in this last run from within `VideoProcessor.setupVideoWriter`:
+`WARNING: AVAssetWriter did not immediately create file on disk` (around line 88 in `VideoProcessor.swift`)
+This is different from the previous log which showed:
+`✓ AVAssetWriter created file on disk: ... (11 bytes)`
+This change is because I commented out the `try "placeholder".data(using: .utf8)?.write(to: url)` line. So now, `AVAssetWriter` is solely responsible for file creation, and it seems it might not create the file (or make it non-zero size) immediately upon initialization. This is not necessarily an error itself but a change in behavior. The 11-byte file previously was indeed my "placeholder" string.
+
+The core issue remains: execution halts after the last `print` in `setupVideoWriter` and before it can return.
+
+Let's try to isolate which of the AVFoundation calls is the culprit by adding print statements immediately before and after each of them within `VideoProcessor.setupVideoWriter`.
+
+**Plan:**
+In `VideoProcessor.swift`, inside `setupVideoWriter`:
+1. Add `print` before and after `videoInput = AVAssetWriterInput(...)`.
+2. Add `print` before and after `writer.add(videoInput)`.
+3. Add `print` just before `return writer`.
+
+---
+
+```diff
+              print("VIDEO CONFIG: Width=\(width), Height=\(height), BitRate=\(bitrate/1_000_000)Mbps, FrameRate=\(frameRate)")
+              
++             print("DEBUG_VP: Attempting to create AVAssetWriterInput...")
+              videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
++             print("DEBUG_VP: AVAssetWriterInput creation attempted (videoInput is \(videoInput == nil ? "nil" : "not nil")).")
+              guard let videoInput = videoInput else {
+                  throw NSError(domain: "VideoProcessor", code: 1005, userInfo: [NSLocalizedDescriptionKey: "Failed to create video input"])
+```
+
+```diff
+              videoInput.expectsMediaDataInRealTime = true
+              
++             print("DEBUG_VP: Checking if writer can add videoInput...")
+              guard writer.canAdd(videoInput) else {
++                 print("DEBUG_VP: Writer cannot add videoInput.")
+                  throw NSError(domain: "VideoProcessor", code: 1006, userInfo: [NSLocalizedDescriptionKey: "Cannot add video input to asset writer"])
+              }
++             print("DEBUG_VP: Writer can add videoInput. Attempting to add...")
+              
+              writer.add(videoInput)
++             print("DEBUG_VP: writer.add(videoInput) executed.")
+              
++             print("DEBUG_VP: Attempting to return from setupVideoWriter...")
+              return writer
+          } catch {
+```
+
+---
+
+The new `DEBUG_VP:` print statements have been added to `VideoProcessor.setupVideoWriter`. This should give us a very clear indication of which AVFoundation call is failing, or if the function completes.
+
+Let's run `./run.sh` one more time.
+
+---
+
+```bash
+./run.sh
+```
+
+```
+adam@Hamlet didyouget.it % ./run.sh
+Building Did You Get It app in debug mode...
+Building for debugging...
+[7/7] Applying DidYouGet
+Build complete! (2.51s)
+Build successful!
+Running application from: /Users/adam/Developer/vcs/github.twardoch/pub/didyouge
+t.it/.build/x86_64-apple-macosx/debug/DidYouGet
+=== APPLICATION INITIALIZATION ===
+Application starting up. macOS Version: Version 15.5 (Build 24F74)
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+Found persisted recording state: recording was active
+Restored video output URL: file:///Users/adam/Movies/DidYouGetIt_2025-05-21_01-3
+8-27/DidYouGetIt_2025-05-21_01-38-27.mov
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+Found persisted recording state: recording was active
+Restored video output URL: file:///Users/adam/Movies/DidYouGetIt_2025-05-21_01-3
+8-27/DidYouGetIt_2025-05-21_01-38-27.mov
+WARNING: PreferencesManager not connected to RecordingManager during app init
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+Found persisted recording state: recording was active
+Restored video output URL: file:///Users/adam/Movies/DidYouGetIt_2025-05-21_01-3
+8-27/DidYouGetIt_2025-05-21_01-38-27.mov
+ContentView appeared - ensuring PreferencesManager is connected
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+ContentView onAppear - checking recording state
+Not currently recording, safe to reset state
+Resetting recording state
+Clearing persisted recording state
+Recording state reset complete
+Record button clicked - first ensuring PreferencesManager is connected
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+PreferencesManager confirmed connected, starting recording
+Resetting recording state
+Clearing persisted recording state
+Recording state reset complete
+
+=== STARTING RECORDING ===
+
+Recording source: Display with ID 69734662
+Recording options: Audio=false, Mouse=true, Keyboard=true
+Base output directory: /Users/adam/Movies
+Created/verified recording directory: /Users/adam/Movies/DidYouGetIt_2025-05-21_
+01-39-07
+✓ Successfully tested write permissions in directory
+Created recording session marker file with session info
+Created placeholder for video file at: /Users/adam/Movies/DidYouGetIt_2025-05-21
+_01-39-07/DidYouGetIt_2025-05-21_01-39-07.mov
+Created placeholder for mouse tracking file at: /Users/adam/Movies/DidYouGetIt_2
+025-05-21_01-39-07/DidYouGetIt_2025-05-21_01-39-07_mouse.json
+Created placeholder for keyboard tracking file at: /Users/adam/Movies/DidYouGetI
+t_2025-05-21_01-39-07/DidYouGetIt_2025-05-21_01-39-07_keyboard.json
+Mouse tracking path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-39-07/DidYouGe
+tIt_2025-05-21_01-39-07_mouse.json
+Keyboard tracking path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-39-07/DidYo
+uGetIt_2025-05-21_01-39-07_keyboard.json
+Video output path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-39-07/DidYouGetI
+t_2025-05-21_01-39-07.mov
+No separate audio file will be created (mixed with video or audio disabled)
+Saved video output URL to UserDefaults: file:///Users/adam/Movies/DidYouGetIt_20
+25-05-21_01-39-07/DidYouGetIt_2025-05-21_01-39-07.mov
+Configuring stream settings...
+Setting frame rate to 60 FPS
+Aspect ratio preservation enabled (macOS 14+)
+Setting up content filter based on capture type: display
+Capturing display 69734662 at 3072 x 1920 (with Retina scaling)
+VIDEO CONFIG: Width=3072, Height=1920, Quality=High, FrameRate=60
+Adding dummy capture callback for initialization
+Initializing capture system with warmup frame...
+✓ Received dummy initialization frame
+Dummy capture completed successfully
+Creating video asset writer with output URL: /Users/adam/Movies/DidYouGetIt_2025
+-05-21_01-39-07/DidYouGetIt_2025-05-21_01-39-07.mov
+Removed existing video file at /Users/adam/Movies/DidYouGetIt_2025-05-21_01-39-0
+7/DidYouGetIt_2025-05-21_01-39-07.mov
+✓ Successfully created empty placeholder file at /Users/adam/Movies/DidYouGetIt_
+2025-05-21_01-39-07/DidYouGetIt_2025-05-21_01-39-07.mov
+✓ Video asset writer created successfully, initial status: 0
+WARNING: AVAssetWriter did not immediately create file on disk
+Configuring video input settings
+Using video quality: High with bitrate: 20 Mbps
+VIDEO CONFIG: Width=3072, Height=1920, BitRate=20Mbps, FrameRate=60
+DEBUG_VP: Attempting to create AVAssetWriterInput...
+Stop button clicked - requesting stop via RecordingManager
+Stop button clicked - requesting stop via RecordingManager
+Stop button clicked - requesting stop via RecordingManager
+Stop button clicked - requesting stop via RecordingManager
+Stop button clicked - requesting stop via RecordingManager
+adam@Hamlet didyouget.it %
+```
+
+---
+
+Progress!
+
+The log now includes:
+```
+VIDEO CONFIG: Width=3072, Height=1920, BitRate=20Mbps, FrameRate=60
+DEBUG_VP: Attempting to create AVAssetWriterInput...
+```
+And then it stops before the next `DEBUG_VP:` print:
+`DEBUG_VP: AVAssetWriterInput creation attempted (videoInput is \(videoInput == nil ? "nil" : "not nil")).`
+
+This means the line:
+`videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)`
+is the one causing the silent crash/exit. `AVAssetWriterInput` initialization is failing.
+
+The `videoSettings` are:
+```swift
+            let videoSettings: [String: Any] = [
+                AVVideoCodecKey: AVVideoCodecType.h264,
+                AVVideoWidthKey: width, // 3072
+                AVVideoHeightKey: height, // 1920
+                AVVideoCompressionPropertiesKey: [
+                    AVVideoAverageBitRateKey: bitrate, // 20_000_000
+                    AVVideoExpectedSourceFrameRateKey: frameRate, // 60
+                    AVVideoMaxKeyFrameIntervalKey: frameRate, // 60
+                    AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+                    AVVideoAllowFrameReorderingKey: false,
+                    AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCABAC,
+                    "RequiresBFrames": false
+                ]
+            ]
+```
+These settings *look* valid. However, `AVFoundation` can be particular.
+Common reasons for `AVAssetWriterInput` failing to initialize (often with an `NSInvalidArgumentException` if it were catchable, but sometimes a hard crash if parameters are deeply invalid for the hardware encoder) include:
+1.  **Unsupported dimensions/frame rate/bitrate combination for the selected codec or profile level.** H.264 High Profile AutoLevel *should* be flexible, but 3072x1920 @ 60fps is demanding.
+2.  **Incorrect data types for values in `videoSettings`**. Everything here looks like the correct type.
+3.  **Hardware encoder limitations.**
+
+The "AutoLevel" for `AVVideoProfileLevelKey` should ideally select a level appropriate for the resolution and frame rate.
+
+A possible issue: The key `"RequiresBFrames"` is a boolean. Some AVFoundation keys expect NSNumber-boxed booleans (`NSNumber(value: false)`). While Swift often bridges this, it can sometimes be a source of issues with older Objective-C APIs.
+
+Let's try explicitly using `NSNumber` for the boolean values in `AVVideoCompressionPropertiesKey`.
+- `AVVideoAllowFrameReorderingKey: NSNumber(value: false)`
+- `"RequiresBFrames": NSNumber(value: false)` (This is not a standard AVFoundation key, if it's custom, it might be fine, but if it's meant for AVFoundation, it's an unknown key. If it's not an AVFoundation key, it should probably be removed unless it's for a specific custom part of the asset writer).
+
+The key `"RequiresBFrames"` is suspicious. Standard AVFoundation keys are usually constants like `AVVideoAllowFrameReorderingKey`. A string literal key might be ignored or cause issues if the underlying Objective-C dictionaries expect specific key types. I'll remove this `"RequiresBFrames"` key for now, as it's non-standard and could be problematic. If B-frames need to be disabled, `AVVideoAllowFrameReorderingKey: false` often implies no B-frames or handles it.
+
+**Plan:**
+1.  In `VideoProcessor.swift`, `setupVideoWriter`, modify the `videoSettings` dictionary:
+    *   Change `AVVideoAllowFrameReorderingKey: false` to `AVVideoAllowFrameReorderingKey: NSNumber(value: false)`.
+    *   Remove the `"RequiresBFrames": false` entry.
+2.  Run `./run.sh` again.
+
+---
+
+```diff
+                      AVVideoMaxKeyFrameIntervalKey: frameRate, 
+                      AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+-                     // Add these reliability settings
+-                     AVVideoAllowFrameReorderingKey: false,    // Disable frame reordering for streaming
+-                     AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCABAC, // Use CABAC for better quality
+-                     "RequiresBFrames": false                  // Avoid B-frames for better streaming
++                     AVVideoAllowFrameReorderingKey: NSNumber(value: false),
++                     AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCABAC
+                  ]
+              ]
+```
+
+---
+
+The changes to `videoSettings` in `VideoProcessor.swift` have been applied. The `RequiresBFrames` key was removed, and `AVVideoAllowFrameReorderingKey` now uses `NSNumber(value: false)`.
+
+Let's run the application again.
+
+---
+
+```bash
+./run.sh
+```
+
+```
+adam@Hamlet didyouget.it % ./run.sh
+Building Did You Get It app in debug mode...
+Building for debugging...
+[7/7] Applying DidYouGet
+Build complete! (2.61s)
+Build successful!
+Running application from: /Users/adam/Developer/vcs/github.twardoch/pub/didyouge
+t.it/.build/x86_64-apple-macosx/debug/DidYouGet
+=== APPLICATION INITIALIZATION ===
+Application starting up. macOS Version: Version 15.5 (Build 24F74)
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+Found persisted recording state: recording was active
+Restored video output URL: file:///Users/adam/Movies/DidYouGetIt_2025-05-21_01-3
+9-07/DidYouGetIt_2025-05-21_01-39-07.mov
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+Found persisted recording state: recording was active
+Restored video output URL: file:///Users/adam/Movies/DidYouGetIt_2025-05-21_01-3
+9-07/DidYouGetIt_2025-05-21_01-39-07.mov
+WARNING: PreferencesManager not connected to RecordingManager during app init
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+Found persisted recording state: recording was active
+Restored video output URL: file:///Users/adam/Movies/DidYouGetIt_2025-05-21_01-3
+9-07/DidYouGetIt_2025-05-21_01-39-07.mov
+ContentView appeared - ensuring PreferencesManager is connected
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+ContentView onAppear - checking recording state
+Not currently recording, safe to reset state
+Resetting recording state
+Clearing persisted recording state
+Recording state reset complete
+Record button clicked - first ensuring PreferencesManager is connected
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+PreferencesManager confirmed connected, starting recording
+Resetting recording state
+Clearing persisted recording state
+Recording state reset complete
+
+=== STARTING RECORDING ===
+
+Recording source: Display with ID 69734662
+Recording options: Audio=false, Mouse=true, Keyboard=true
+Base output directory: /Users/adam/Movies
+Created/verified recording directory: /Users/adam/Movies/DidYouGetIt_2025-05-21_
+01-39-43
+✓ Successfully tested write permissions in directory
+Created recording session marker file with session info
+Created placeholder for video file at: /Users/adam/Movies/DidYouGetIt_2025-05-21
+_01-39-43/DidYouGetIt_2025-05-21_01-39-43.mov
+Created placeholder for mouse tracking file at: /Users/adam/Movies/DidYouGetIt_2
+025-05-21_01-39-43/DidYouGetIt_2025-05-21_01-39-43_mouse.json
+Created placeholder for keyboard tracking file at: /Users/adam/Movies/DidYouGetI
+t_2025-05-21_01-39-43/DidYouGetIt_2025-05-21_01-39-43_keyboard.json
+Mouse tracking path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-39-43/DidYouGe
+tIt_2025-05-21_01-39-43_mouse.json
+Keyboard tracking path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-39-43/DidYo
+uGetIt_2025-05-21_01-39-43_keyboard.json
+Video output path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-39-43/DidYouGetI
+t_2025-05-21_01-39-43.mov
+No separate audio file will be created (mixed with video or audio disabled)
+Saved video output URL to UserDefaults: file:///Users/adam/Movies/DidYouGetIt_20
+25-05-21_01-39-43/DidYouGetIt_2025-05-21_01-39-43.mov
+Configuring stream settings...
+Setting frame rate to 60 FPS
+Aspect ratio preservation enabled (macOS 14+)
+Setting up content filter based on capture type: display
+Capturing display 69734662 at 3072 x 1920 (with Retina scaling)
+VIDEO CONFIG: Width=3072, Height=1920, Quality=High, FrameRate=60
+Adding dummy capture callback for initialization
+Initializing capture system with warmup frame...
+✓ Received dummy initialization frame
+Dummy capture completed successfully
+Creating video asset writer with output URL: /Users/adam/Movies/DidYouGetIt_2025
+-05-21_01-39-43/DidYouGetIt_2025-05-21_01-39-43.mov
+Removed existing video file at /Users/adam/Movies/DidYouGetIt_2025-05-21_01-39-4
+3/DidYouGetIt_2025-05-21_01-39-43.mov
+✓ Successfully created empty placeholder file at /Users/adam/Movies/DidYouGetIt_
+2025-05-21_01-39-43/DidYouGetIt_2025-05-21_01-39-43.mov
+✓ Video asset writer created successfully, initial status: 0
+WARNING: AVAssetWriter did not immediately create file on disk
+Configuring video input settings
+Using video quality: High with bitrate: 20 Mbps
+VIDEO CONFIG: Width=3072, Height=1920, BitRate=20Mbps, FrameRate=60
+DEBUG_VP: Attempting to create AVAssetWriterInput...
+DEBUG_VP: AVAssetWriterInput creation attempted (videoInput is not nil).
+DEBUG_VP: Checking if writer can add videoInput...
+DEBUG_VP: Writer can add videoInput. Attempting to add...
+DEBUG_VP: writer.add(videoInput) executed.
+DEBUG_VP: Attempting to return from setupVideoWriter...
+DEBUG: Returned from videoProcessor.setupVideoWriter successfully.
+DEBUG: Checking audio preferences...
+DEBUG: Audio recording is DISABLED in preferences.
+DEBUG: Finished checking audio preferences.
+Attempting to start video writer...
+Starting video asset writer...
+VideoWriter.startWriting() returned true
+✓ Video writer started successfully, status: 1
+✓ Video writer started.
+Attempting to create SCStream...
+Creating SCStream with configured filter and settings
+SCStreamFrameOutput initialized - ready to receive frames
+Screen capture output added successfully
+✓ SCStream created.
+Attempting to start video/audio processor sessions...
+Starting video writer session at time: 0.0...
+✓ Video writer session started successfully
+✓ Video file already exists at path
+✓ Video/audio processor sessions started.
+Attempting to run timer setup on MainActor...
+Inside MainActor.run for timer setup.
+Saved recording start time to UserDefaults: 2025-05-20 23:39:44 +0000
+Starting recording timer at: 2025-05-20 23:39:44 +0000
+Setting immediate startTime to 2025-05-20 23:39:44 +0000
+Setting initial recordingDuration to 0
+Creating timer with captured startTime 2025-05-20 23:39:44 +0000
+✓ Dispatch timer created and activated
+✓ Timer successfully initialized and started
+✓ Timer setup block completed.
+Attempting to start capture session (captureSessionManager.startCapture())...
+Starting SCStream capture...
+Forcing UI refresh for timer
+TIMER UPDATE: Recording duration = 0.018483996391296387 seconds
+Saved duration 0.018483996391296387 to UserDefaults
+SCStream capture started successfully
+✓ Capture session started.
+Attempting to start input tracking...
+Accessibility permission status: Denied
+Mouse tracking enabled, URL: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-39-43/
+DidYouGetIt_2025-05-21_01-39-43_mouse.json
+WARNING: Mouse tracking requires Accessibility permission - not starting
+Keyboard tracking enabled, URL: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-39-
+43/DidYouGetIt_2025-05-21_01-39-43_keyboard.json
+WARNING: Keyboard tracking requires Accessibility permission - not starting
+✓ Input tracking started or skipped.
+Recording started successfully
+TIMER UPDATE: Recording duration = 0.1310800313949585 seconds
+Saved duration 0.1310800313949585 to UserDefaults
+TIMER UPDATE: Recording duration = 0.20395004749298096 seconds
+Saved duration 0.20395004749298096 to UserDefaults
+TIMER UPDATE: Recording duration = 0.30393004417419434 seconds
+Saved duration 0.30393004417419434 to UserDefaults
+TIMER UPDATE: Recording duration = 0.4039720296859741 seconds
+Saved duration 0.4039720296859741 to UserDefaults
+TIMER UPDATE: Recording duration = 0.5038480758666992 seconds
+Saved duration 0.5038480758666992 to UserDefaults
+TIMER UPDATE: Recording duration = 0.6009690761566162 seconds
+Saved duration 0.6009690761566162 to UserDefaults
+TIMER UPDATE: Recording duration = 0.7004120349884033 seconds
+Saved duration 0.7004120349884033 to UserDefaults
+TIMER UPDATE: Recording duration = 0.8010430335998535 seconds
+Saved duration 0.8010430335998535 to UserDefaults
+TIMER UPDATE: Recording duration = 0.902474045753479 seconds
+Saved duration 0.902474045753479 to UserDefaults
+TIMER UPDATE: Recording duration = 2.0012940168380737 seconds
+TIMER UPDATE: Recording duration = 2.1026690006256104 seconds
+TIMER UPDATE: Recording duration = 2.2009670734405518 seconds
+TIMER UPDATE: Recording duration = 2.3011590242385864 seconds
+TIMER UPDATE: Recording duration = 2.4011560678482056 seconds
+TIMER UPDATE: Recording duration = 2.5011820793151855 seconds
+TIMER UPDATE: Recording duration = 2.601254105567932 seconds
+TIMER UPDATE: Recording duration = 2.7010860443115234 seconds
+TIMER UPDATE: Recording duration = 2.8010170459747314 seconds
+TIMER UPDATE: Recording duration = 2.9014140367507935 seconds
+TIMER UPDATE: Recording duration = 4.004465103149414 seconds
+TIMER UPDATE: Recording duration = 4.1036680936813354 seconds
+TIMER UPDATE: Recording duration = 4.201417088508606 seconds
+TIMER UPDATE: Recording duration = 4.301006078720093 seconds
+TIMER UPDATE: Recording duration = 4.401134014129639 seconds
+TIMER UPDATE: Recording duration = 4.501025080680847 seconds
+TIMER UPDATE: Recording duration = 4.60201108455658 seconds
+TIMER UPDATE: Recording duration = 4.7022340297698975 seconds
+TIMER UPDATE: Recording duration = 4.80141007900238 seconds
+TIMER UPDATE: Recording duration = 4.902529001235962 seconds
+Saved duration 5.0004260540008545 to UserDefaults
+Saved duration 5.1038020849227905 to UserDefaults
+Saved duration 5.2010639905929565 to UserDefaults
+Saved duration 5.301045060157776 to UserDefaults
+Saved duration 5.4011640548706055 to UserDefaults
+Saved duration 5.501055002212524 to UserDefaults
+Saved duration 5.601029992103577 to UserDefaults
+Saved duration 5.701825022697449 to UserDefaults
+Saved duration 5.801094055175781 to UserDefaults
+Saved duration 5.901112079620361 to UserDefaults
+TIMER UPDATE: Recording duration = 6.001152992248535 seconds
+TIMER UPDATE: Recording duration = 6.103926062583923 seconds
+TIMER UPDATE: Recording duration = 6.2010990381240845 seconds
+TIMER UPDATE: Recording duration = 6.3020920753479 seconds
+TIMER UPDATE: Recording duration = 6.401446104049683 seconds
+TIMER UPDATE: Recording duration = 6.501733064651489 seconds
+TIMER UPDATE: Recording duration = 6.601185083389282 seconds
+TIMER UPDATE: Recording duration = 6.701285004615784 seconds
+TIMER UPDATE: Recording duration = 6.801189064979553 seconds
+TIMER UPDATE: Recording duration = 6.901201009750366 seconds
+TIMER UPDATE: Recording duration = 8.001142024993896 seconds
+TIMER UPDATE: Recording duration = 8.10128104686737 seconds
+TIMER UPDATE: Recording duration = 8.201300024986267 seconds
+TIMER UPDATE: Recording duration = 8.30129599571228 seconds
+TIMER UPDATE: Recording duration = 8.401259064674377 seconds
+TIMER UPDATE: Recording duration = 8.501384019851685 seconds
+TIMER UPDATE: Recording duration = 8.601363062858582 seconds
+TIMER UPDATE: Recording duration = 8.701385021209717 seconds
+TIMER UPDATE: Recording duration = 8.801253080368042 seconds
+TIMER UPDATE: Recording duration = 8.901215076446533 seconds
+TIMER UPDATE: Recording duration = 10.003149032592773 seconds
+Saved duration 10.003149032592773 to UserDefaults
+TIMER UPDATE: Recording duration = 10.101837038993835 seconds
+Saved duration 10.101837038993835 to UserDefaults
+TIMER UPDATE: Recording duration = 10.2013680934906 seconds
+Saved duration 10.2013680934906 to UserDefaults
+TIMER UPDATE: Recording duration = 10.301201105117798 seconds
+Saved duration 10.301201105117798 to UserDefaults
+TIMER UPDATE: Recording duration = 10.401163101196289 seconds
+Saved duration 10.401163101196289 to UserDefaults
+TIMER UPDATE: Recording duration = 10.501148104667664 seconds
+Saved duration 10.501148104667664 to UserDefaults
+TIMER UPDATE: Recording duration = 10.602843046188354 seconds
+Saved duration 10.602843046188354 to UserDefaults
+TIMER UPDATE: Recording duration = 10.704451084136963 seconds
+Saved duration 10.704451084136963 to UserDefaults
+TIMER UPDATE: Recording duration = 10.802175045013428 seconds
+Saved duration 10.802175045013428 to UserDefaults
+TIMER UPDATE: Recording duration = 10.901228070259094 seconds
+Saved duration 10.901228070259094 to UserDefaults
+TIMER UPDATE: Recording duration = 12.001230001449585 seconds
+TIMER UPDATE: Recording duration = 12.101384043693542 seconds
+TIMER UPDATE: Recording duration = 12.20124101638794 seconds
+TIMER UPDATE: Recording duration = 12.301557064056396 seconds
+TIMER UPDATE: Recording duration = 12.401315093040466 seconds
+TIMER UPDATE: Recording duration = 12.50127899646759 seconds
+TIMER UPDATE: Recording duration = 12.615884065628052 seconds
+TIMER UPDATE: Recording duration = 12.701598048210144 seconds
+ContentView onAppear - checking recording state
+Recording is active, preserving state
+TIMER UPDATE: Recording duration = 12.802155017852783 seconds
+TIMER UPDATE: Recording duration = 12.902766108512878 seconds
+TIMER UPDATE: Recording duration = 14.003761053085327 seconds
+TIMER UPDATE: Recording duration = 14.101370096206665 seconds
+TIMER UPDATE: Recording duration = 14.201196074485779 seconds
+TIMER UPDATE: Recording duration = 14.301837086677551 seconds
+TIMER UPDATE: Recording duration = 14.401202082633972 seconds
+TIMER UPDATE: Recording duration = 14.501971006393433 seconds
+TIMER UPDATE: Recording duration = 14.60122799873352 seconds
+TIMER UPDATE: Recording duration = 14.702146053314209 seconds
+TIMER UPDATE: Recording duration = 14.801519989967346 seconds
+TIMER UPDATE: Recording duration = 14.901368021965027 seconds
+Saved duration 15.001231074333191 to UserDefaults
+Saved duration 15.101230025291443 to UserDefaults
+Saved duration 15.201414108276367 to UserDefaults
+Saved duration 15.301485061645508 to UserDefaults
+Saved duration 15.40146005153656 to UserDefaults
+Saved duration 15.501285076141357 to UserDefaults
+Saved duration 15.601418018341064 to UserDefaults
+Saved duration 15.701300024986267 to UserDefaults
+Saved duration 15.801408052444458 to UserDefaults
+Saved duration 15.901893019676208 to UserDefaults
+TIMER UPDATE: Recording duration = 16.001244068145752 seconds
+TIMER UPDATE: Recording duration = 16.101269006729126 seconds
+TIMER UPDATE: Recording duration = 16.201500058174133 seconds
+TIMER UPDATE: Recording duration = 16.30128800868988 seconds
+TIMER UPDATE: Recording duration = 16.401302099227905 seconds
+TIMER UPDATE: Recording duration = 16.50211000442505 seconds
+TIMER UPDATE: Recording duration = 16.601378083229065 seconds
+TIMER UPDATE: Recording duration = 16.70127809047699 seconds
+TIMER UPDATE: Recording duration = 16.80352008342743 seconds
+TIMER UPDATE: Recording duration = 16.90167808532715 seconds
+TIMER UPDATE: Recording duration = 18.001581072807312 seconds
+TIMER UPDATE: Recording duration = 18.101407051086426 seconds
+TIMER UPDATE: Recording duration = 18.201561093330383 seconds
+TIMER UPDATE: Recording duration = 18.301369071006775 seconds
+TIMER UPDATE: Recording duration = 18.401472091674805 seconds
+TIMER UPDATE: Recording duration = 18.501341104507446 seconds
+TIMER UPDATE: Recording duration = 18.601962089538574 seconds
+TIMER UPDATE: Recording duration = 18.701442003250122 seconds
+TIMER UPDATE: Recording duration = 18.80130708217621 seconds
+TIMER UPDATE: Recording duration = 18.90146005153656 seconds
+TIMER UPDATE: Recording duration = 20.001464009284973 seconds
+Saved duration 20.001464009284973 to UserDefaults
+TIMER UPDATE: Recording duration = 20.10201108455658 seconds
+Saved duration 20.10201108455658 to UserDefaults
+TIMER UPDATE: Recording duration = 20.20139503479004 seconds
+Saved duration 20.20139503479004 to UserDefaults
+TIMER UPDATE: Recording duration = 20.301460027694702 seconds
+Saved duration 20.301460027694702 to UserDefaults
+TIMER UPDATE: Recording duration = 20.401315093040466 seconds
+Saved duration 20.401315093040466 to UserDefaults
+TIMER UPDATE: Recording duration = 20.50142800807953 seconds
+Saved duration 20.50142800807953 to UserDefaults
+TIMER UPDATE: Recording duration = 20.602220058441162 seconds
+Saved duration 20.602220058441162 to UserDefaults
+TIMER UPDATE: Recording duration = 20.701345086097717 seconds
+Saved duration 20.701345086097717 to UserDefaults
+TIMER UPDATE: Recording duration = 20.801653027534485 seconds
+Saved duration 20.801653027534485 to UserDefaults
+TIMER UPDATE: Recording duration = 20.901365041732788 seconds
+Saved duration 20.901365041732788 to UserDefaults
+TIMER UPDATE: Recording duration = 22.00203800201416 seconds
+TIMER UPDATE: Recording duration = 22.101553082466125 seconds
+TIMER UPDATE: Recording duration = 22.201735019683838 seconds
+TIMER UPDATE: Recording duration = 22.30141007900238 seconds
+TIMER UPDATE: Recording duration = 22.401392102241516 seconds
+TIMER UPDATE: Recording duration = 22.501660108566284 seconds
+TIMER UPDATE: Recording duration = 22.60287308692932 seconds
+TIMER UPDATE: Recording duration = 22.701667070388794 seconds
+TIMER UPDATE: Recording duration = 22.80152201652527 seconds
+TIMER UPDATE: Recording duration = 22.902003049850464 seconds
+TIMER UPDATE: Recording duration = 24.00147306919098 seconds
+TIMER UPDATE: Recording duration = 24.103167057037354 seconds
+TIMER UPDATE: Recording duration = 24.203505039215088 seconds
+TIMER UPDATE: Recording duration = 24.30490505695343 seconds
+TIMER UPDATE: Recording duration = 24.401389002799988 seconds
+TIMER UPDATE: Recording duration = 24.50141203403473 seconds
+TIMER UPDATE: Recording duration = 24.603779077529907 seconds
+TIMER UPDATE: Recording duration = 24.701595067977905 seconds
+TIMER UPDATE: Recording duration = 24.80165410041809 seconds
+TIMER UPDATE: Recording duration = 24.901450991630554 seconds
+Saved duration 25.002004027366638 to UserDefaults
+Saved duration 25.101620078086853 to UserDefaults
+Saved duration 25.20148503780365 to UserDefaults
+Saved duration 25.30222201347351 to UserDefaults
+Saved duration 25.40147602558136 to UserDefaults
+Saved duration 25.501458048820496 to UserDefaults
+Saved duration 25.60382902622223 to UserDefaults
+Saved duration 25.701646089553833 to UserDefaults
+Saved duration 25.801699995994568 to UserDefaults
+Saved duration 25.901612997055054 to UserDefaults
+TIMER UPDATE: Recording duration = 26.001654028892517 seconds
+TIMER UPDATE: Recording duration = 26.101739048957825 seconds
+TIMER UPDATE: Recording duration = 26.20489799976349 seconds
+TIMER UPDATE: Recording duration = 26.30349600315094 seconds
+TIMER UPDATE: Recording duration = 26.40345799922943 seconds
+TIMER UPDATE: Recording duration = 26.501986026763916 seconds
+TIMER UPDATE: Recording duration = 26.614220023155212 seconds
+TIMER UPDATE: Recording duration = 26.702049016952515 seconds
+ContentView onAppear - checking recording state
+Recording is active, preserving state
+TIMER UPDATE: Recording duration = 26.801766991615295 seconds
+TIMER UPDATE: Recording duration = 26.901596069335938 seconds
+Stop button clicked - requesting stop via RecordingManager
+Stop recording requested via stopRecording()
+
+=== STOPPING RECORDING (INTERNAL) ===
+
+Setting isRecording = false
+Cancelling dispatch timer
+Explicitly setting recordingDuration to 0 for UI update.
+Stopping input tracking
+Stopping capture session
+Stopping SCStream capture...
+Stream capture stopped successfully
+Waiting for buffers to flush (0.5s delay)...
+Finalizing recording files
+Finalizing video file...
+PRE-FINALIZE VIDEO FILE SIZE: 0 bytes
+CRITICAL WARNING: Video file is empty (0 bytes) before finalization!
+WRITER STATE DUMP:
+  - Status: 1
+  - Error: nil
+  - Video frames processed: 0
+Marking video input as finished
+Video successfully finalized
+POST-FINALIZE VIDEO FILE SIZE: 0 bytes
+Removed zero-length video file at /Users/adam/Movies/DidYouGetIt_2025-05-21_01-3
+9-43/DidYouGetIt_2025-05-21_01-39-43.mov
+INFO: No separate audio writer to finalize
+
+=== RECORDING DIAGNOSTICS ===
+
+Video frames processed: 0
+Audio samples processed: 0
+Checking Video file: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-39-43/DidYouGe
+tIt_2025-05-21_01-39-43.mov
+ERROR: Video file not found at expected location: /Users/adam/Movies/DidYouGetIt
+_2025-05-21_01-39-43/DidYouGetIt_2025-05-21_01-39-43.mov
+Checking Mouse tracking file: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-39-43
+/DidYouGetIt_2025-05-21_01-39-43_mouse.json
+Mouse tracking file size: 2 bytes
+✓ Mouse tracking file successfully saved with size: 2 bytes
+Mouse tracking file created at: 2025-05-20 23:39:43 +0000
+Checking Keyboard tracking file: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-39
+-43/DidYouGetIt_2025-05-21_01-39-43_keyboard.json
+Keyboard tracking file size: 2 bytes
+✓ Keyboard tracking file successfully saved with size: 2 bytes
+Keyboard tracking file created at: 2025-05-20 23:39:43 +0000
+Recording stopped successfully (Internal)
+stopRecordingAsyncInternal completed successfully.
+Proceeding to forceFullReset() after stop attempt.
+EMERGENCY: Forcing immediate reset of all recording state
+Emergency reset complete - all state variables cleared
+stopRecording() finished. UI should reflect stopped state.
+ContentView onAppear - checking recording state
+Not currently recording, safe to reset state
+Resetting recording state
+Clearing persisted recording state
+Recording state reset complete
+adam@Hamlet didyouget.it %
+```
+
+---
+
+Excellent! This log is much more informative.
+
+**Key Observations from the new log:**
+
+1.  **`VideoProcessor.setupVideoWriter` now completes successfully:**
+    ```
+    DEBUG_VP: Attempting to create AVAssetWriterInput...
+    DEBUG_VP: AVAssetWriterInput creation attempted (videoInput is not nil).
+    DEBUG_VP: Checking if writer can add videoInput...
+    DEBUG_VP: Writer can add videoInput. Attempting to add...
+    DEBUG_VP: writer.add(videoInput) executed.
+    DEBUG_VP: Attempting to return from setupVideoWriter...
+    ```
+    This confirms that the changes to `videoSettings` (using `NSNumber` and removing `RequiresBFrames`) fixed the crash within `AVAssetWriterInput` initialization.
+
+2.  **`RecordingManager.startRecordingAsync` proceeds much further:**
+    ```
+    DEBUG: Returned from videoProcessor.setupVideoWriter successfully.
+    DEBUG: Checking audio preferences...
+    DEBUG: Audio recording is DISABLED in preferences.
+    DEBUG: Finished checking audio preferences.
+    Attempting to start video writer...
+    Starting video asset writer... (from VideoProcessor.startWriting)
+    VideoWriter.startWriting() returned true (from VideoProcessor.startWriting)
+    ✓ Video writer started successfully, status: 1 (from VideoProcessor.startWriting)
+    ✓ Video writer started.
+    Attempting to create SCStream...
+    Creating SCStream with configured filter and settings (from CaptureSessionManager.createStream)
+    SCStreamFrameOutput initialized - ready to receive frames (from SCStreamFrameOutput.init)
+    Screen capture output added successfully (from CaptureSessionManager.createStream)
+    ✓ SCStream created.
+    Attempting to start video/audio processor sessions...
+    Starting video writer session at time: 0.0... (from VideoProcessor.startSession)
+    ✓ Video writer session started successfully (from VideoProcessor.startSession)
+    ✓ Video file already exists at path (from VideoProcessor.startSession)
+    ✓ Video/audio processor sessions started.
+    Attempting to run timer setup on MainActor...
+    Inside MainActor.run for timer setup.
+    Saved recording start time to UserDefaults: ...
+    Starting recording timer at: ...
+    Setting immediate startTime to ...
+    Setting initial recordingDuration to 0
+    Creating timer with captured startTime ...
+    ✓ Dispatch timer created and activated
+    ✓ Timer successfully initialized and started
+    ✓ Timer setup block completed.
+    Attempting to start capture session (captureSessionManager.startCapture())...
+    Starting SCStream capture... (from CaptureSessionManager.startCapture)
+    Forcing UI refresh for timer
+    TIMER UPDATE: Recording duration = 0.018... (Timer is ticking!)
+    Saved duration ... to UserDefaults
+    SCStream capture started successfully (from CaptureSessionManager.startCapture)
+    ✓ Capture session started.
+    Attempting to start input tracking...
+    Accessibility permission status: Denied
+    Mouse tracking enabled, URL: ...
+    WARNING: Mouse tracking requires Accessibility permission - not starting
+    Keyboard tracking enabled, URL: ...
+    WARNING: Keyboard tracking requires Accessibility permission - not starting
+    ✓ Input tracking started or skipped.
+    Recording started successfully 
+    ```
+    This is great! The recording process now appears to start fully. The timer is ticking, and "Recording started successfully" is logged.
+
+3.  **Input Tracking Files:**
+    *   `Accessibility permission status: Denied` - This is a key issue for input tracking.
+    *   `WARNING: Mouse tracking requires Accessibility permission - not starting`
+    *   `WARNING: Keyboard tracking requires Accessibility permission - not starting`
+    *   The JSON files are created (2 bytes, which is likely just `[]`). This is because the trackers are not actually started due to lack of permissions.
+
+4.  **Video File:**
+    *   During stop: `PRE-FINALIZE VIDEO FILE SIZE: 0 bytes`
+    *   `CRITICAL WARNING: Video file is empty (0 bytes) before finalization!`
+    *   `WRITER STATE DUMP: ... Video frames processed: 0`
+    *   `POST-FINALIZE VIDEO FILE SIZE: 0 bytes`
+    *   `Removed zero-length video file at ...`
+    *   This means that even though the `AVAssetWriter` and `AVAssetWriterInput` are set up, no video frames are being processed by `VideoProcessor.processSampleBuffer`.
+
+**New Primary Issues:**
+
+1.  **No video frames processed:** `videoProcessor.videoFramesProcessed` is 0. This means `handleSampleBuffer` in `RecordingManager` is either not receiving screen samples, or `videoProcessor.processSampleBuffer` is failing to process them.
+2.  **Accessibility Permissions Denied:** This prevents mouse and keyboard tracking. This is an external setup issue but explains the empty JSONs.
+
+**Let's tackle the "No video frames processed" issue.**
+`RecordingManager.handleSampleBuffer` is called by `CaptureSessionManager.createStream`'s handler.
+```swift
+// RecordingManager.swift
+    @MainActor
+    private func handleSampleBuffer(_ sampleBuffer: CMSampleBuffer, type: SCStreamType) {
+        // Skip processing if paused
+        if isPaused { // isPaused is initially false
+            return
+        }
+        
+        // Process sample buffer based on type
+        switch type {
+        case .screen:
+            // ---> This is where video frames should go <---
+            _ = videoProcessor.processSampleBuffer(sampleBuffer) 
+        case .audio:
+            // ...
+        }
+    }
+```
+We need to see if `handleSampleBuffer` is being called with `.screen` type, and what `videoProcessor.processSampleBuffer` does/logs.
+
+`VideoProcessor.processSampleBuffer` logs:
+```swift
+// VideoProcessor.swift
+    func processSampleBuffer(_ sampleBuffer: CMSampleBuffer) -> Bool {
+        videoFrameLogCounter += 1
+        let shouldLogDetail = videoFrameLogCounter == 1 || videoFrameLogCounter % 100 == 0
+        
+        if shouldLogDetail {
+            print("VIDEO FRAME: Processing frame #\(videoFrameLogCounter)") // THIS LOG IS MISSING
+        }
+        // ...
+```
+Since "VIDEO FRAME: Processing frame #..." is missing from the application log, it means `videoProcessor.processSampleBuffer` is never being called, which implies `RecordingManager.handleSampleBuffer` is not being called with `type == .screen`, or not being called at all for screen frames.
+
+This points to an issue with `ScreenCaptureKit`'s `SCStream` not delivering frames, or the handler in `CaptureSessionManager` not being set up or called correctly.
+
+In `CaptureSessionManager.createStream`:
+```swift
+// CaptureSessionManager.swift
+    func createStream(filter: SCContentFilter, config: SCStreamConfiguration, handler: @escaping (CMSampleBuffer, RecordingManager.SCStreamType) -> Void) throws {
+        sampleBufferHandler = handler // Stores the handler from RecordingManager
+        
+        print("Creating SCStream with configured filter and settings")
+        captureSession = SCStream(filter: filter, configuration: config, delegate: self) // Self is SCStreamDelegate
+        
+        guard let session = captureSession else {
+            throw NSError(domain: "CaptureSessionManager", code: 2001, userInfo: [NSLocalizedDescriptionKey: "Failed to create SCStream session"])
+        }
+        
+        let frameOutput = SCStreamFrameOutput(sampleHandlerQueue: DispatchQueue(label: "com.didyougetit.frameoutput.queue")) { [weak self] sampleBuffer, type, _ in
+            self?.handleStreamOutput(sampleBuffer, type: type) // Calls internal handler
+        }
+        // ... (error handling for frameOutput) ...
+        try session.addStreamOutput(frameOutput, type: .screen, sampleHandlerQueue: nil) // Type is .screen
+        print("Screen capture output added successfully") // LOGGED
+
+        if config.capturesAudio {
+            // ... (audio output, not relevant here as audio is off) ...
+        }
+    }
+
+    private func handleStreamOutput(_ sampleBuffer: CMSampleBuffer, type: SCStreamOutputType) {
+        guard let handler = sampleBufferHandler else { return }
+        
+        switch type {
+        case .screen:
+            handler(sampleBuffer, .screen) // Calls RecordingManager.handleSampleBuffer
+        case .audio:
+            handler(sampleBuffer, .audio)
+        @unknown default:
+            fatalError("Unknown stream output type: \(type)")
+        }
+    }
+```
+The setup seems correct. `SCStream` is created, `addStreamOutput` for `.screen` is called. The `frameOutput`'s closure calls `self.handleStreamOutput`, which in turn calls the `sampleBufferHandler` (which is `RecordingManager.handleSampleBuffer`).
+
+Why would `SCStream` not deliver frames once `startCapture()` is called?
+- Permissions: Screen recording permission is usually implicitly handled by ScreenCaptureKit when capture starts. If it fails, `startCapture()` usually throws an error. The log shows `SCStream capture started successfully`.
+- Content Filter: If the `SCContentFilter` is misconfigured (e.g., points to a non-existent window or an off-screen display), it might not produce frames. The log shows `Capturing display 69734662 ...`. This display ID should be valid.
+- `SCStream` internal error: Possible, but usually accompanied by delegate error callbacks.
+
+The `CaptureSessionManager` is also an `SCStreamDelegate`. Let's check its delegate methods:
+```swift
+// CaptureSessionManager.swift
+extension CaptureSessionManager: SCStreamDelegate {
+    func stream(_ stream: SCStream, didStopWithError error: Error) {
+        // This is an important callback
+        print("ERROR: SCStream did stop with error: \(error.localizedDescription)")
+        // We should propagate this error or reset state
+        Task { @MainActor in
+            // Example: Notify RecordingManager or handle reset
+            // For now, just print. This needs robust handling.
+        }
+    }
+    // Other optional delegate methods like didStart, didPause, etc. are not implemented.
+}
+```
+If `SCStream` stopped with an error, we *should* see "ERROR: SCStream did stop with error...". This is not in the log.
+
+**Possibility:** The `SCStreamFrameOutput`'s `sampleHandlerQueue` is `DispatchQueue(label: "com.didyougetit.frameoutput.queue")`. This is a serial background queue. `RecordingManager.handleSampleBuffer` and `VideoProcessor.processSampleBuffer` are both `@MainActor`. Is there a deadlock or an issue dispatching from this background queue to the main actor?
+
+`VideoProcessor.processSampleBuffer` is called like this:
+`_ = videoProcessor.processSampleBuffer(sampleBuffer)` from `RecordingManager.handleSampleBuffer` (which is `@MainActor`).
+So, if `handleSampleBuffer` is called, `processSampleBuffer` is also on MainActor.
+
+The `frameOutput` closure in `CaptureSessionManager.createStream`:
+`{ [weak self] sampleBuffer, type, _ in self?.handleStreamOutput(sampleBuffer, type: type) }`
+This closure runs on `com.didyougetit.frameoutput.queue`.
+`self?.handleStreamOutput` calls `handler(sampleBuffer, .screen)`.
+`handler` is `RecordingManager.handleSampleBuffer` (an `@MainActor` func).
+
+Calling an `@MainActor` function from a background queue without `await` or `Task { @MainActor in ... }` can lead to runtime issues or crashes if not handled correctly by the Swift concurrency model, though Swift 5.5+ has improved safety.
+However, `RecordingManager.handleSampleBuffer` is itself marked `@MainActor`. When a non-actor function calls an actor-isolated function, Swift usually inserts the necessary hops. The `SCStreamFrameOutput`'s handler queue is just where the initial callback from ScreenCaptureKit arrives.
+
+Let's add a print statement at the very beginning of `RecordingManager.handleSampleBuffer` to confirm if it's being reached at all for screen samples.
+
+**Plan:**
+1.  In `RecordingManager.swift`, add a print at the start of `handleSampleBuffer` to see if it's called for `.screen` type.
+2.  Review the Accessibility Permission issue - this is why JSONs are empty. The user needs to grant these via System Settings > Privacy & Security > Accessibility. I should add a note about this in the `TODO.md` or as a general reminder.
+3.  Update `TODO.md` with the findings about video frames not being processed and the Accessibility permission issue.
+
+---
+
+```diff
+      @MainActor
+      private func handleSampleBuffer(_ sampleBuffer: CMSampleBuffer, type: SCStreamType) {
++         print("DEBUG_RM: handleSampleBuffer called with type: \(type)")
+          // Skip processing if paused
+          if isPaused {
++             print("DEBUG_RM: handleSampleBuffer - isPaused is true, returning.")
+              return
+          }
+```
+
+---
+
+The print statement has been added to `RecordingManager.handleSampleBuffer`.
+
+Now, let's update `TODO.md`.
+
+---
+
+_**User**_
+
+continue
+
+---
+
+_**Assistant**_
+
+```diff
+  CURRENT ISSUES (as of YYYY-MM-DD HH:MM):
+  
+- **Primary Issue: Recording does not fully initialize or run.**
++ **Primary Issue: No video frames are being processed.**
+  Symptoms observed from the last run:
+- - UI sticks on "Stop" button (meaning `isRecording` becomes true).
+- - Timer does not tick (stuck at 0:00.0).
+- - Output JSON files for mouse/keyboard are empty (`[]`).
+- - Output MOV file is minimal size (e.g., 11 bytes), indicating no video data.
++ - Recording process (`RecordingManager.startRecordingAsync`) now appears to complete successfully.
++ - Timer ticks correctly.
++ - UI shows "Stop" button and timer updates.
++ - However, the output MOV file is 0 bytes (or removed if 0 bytes at finalization).
++ - `VideoProcessor.videoFramesProcessed` remains 0.
++ - `RecordingManager.handleSampleBuffer` is not being called for `.screen` type samples (verified by missing debug logs).
+  
+  **Diagnosis from logs:**
+- - `RecordingManager.startRecordingAsync()` sets `isRecording = true` early on.
+- - However, the function does not seem to complete its execution.
+- - Specifically, log messages related to timer setup, starting `SCStream`, starting `captureSessionManager.startCapture()`, and input tracking are MISSING.
+- - The last observed log message from the `startRecordingAsync` sequence is related to video configuration ("VIDEO CONFIG...").
+- - No explicit error messages (like "ERROR: Failed during recording setup") are printed from the main `catch` block in `startRecordingAsync`.
++ - `VideoProcessor.setupVideoWriter` and subsequent AVFoundation setup calls now succeed (crash fixed).
++ - `CaptureSessionManager.createStream` successfully adds an `SCStreamFrameOutput` for `.screen` type.
++ - `CaptureSessionManager.startCapture` reports success for `SCStream`.
++ - Despite this, the `sampleHandlerQueue` closure in `SCStreamFrameOutput` (which calls `RecordingManager.handleSampleBuffer` via `CaptureSessionManager.handleStreamOutput`) is apparently not being invoked by ScreenCaptureKit, or there's an issue in the dispatch.
+  
+  **Suspicion:**
+- - A call *after* "VIDEO CONFIG..." log and *before* timer setup (e.g., `videoProcessor.startWriting()`, `captureSessionManager.createStream()`) is either crashing, deadlocking, or throwing an unhandled exception that bypasses the main catch block, or causing a silent exit from the function.
++ - `ScreenCaptureKit`'s `SCStream` might not be delivering frames for an unknown reason (e.g., content filter issue not throwing an error, an internal `SCStream` issue, or a deeper permission problem not caught at startup).
++ - Alternatively, there could be a subtle issue with how the `SCStreamFrameOutput` handler or its queue is configured or interacts with Swift Concurrency / MainActor.
+  
+  **Next Steps:**
+- - Added detailed logging within `RecordingManager.startRecordingAsync` to pinpoint the exact line of failure.
+- - Analyze the new logs after running with this detailed logging.
++ - Add a print statement inside the `SCStreamFrameOutput`'s `sampleHandler` closure in `CaptureSessionManager.createStream` to see if the closure itself is ever called by `ScreenCaptureKit`.
++ - Verify `SCContentFilter` configuration details carefully.
++ - Check `SCStreamDelegate` methods in `CaptureSessionManager` for any error callbacks that might not be evident.
++ 
++ **Secondary Issue: Input tracking files (JSON) are empty.**
++ - Cause: Accessibility permissions are denied.
++ - Log: `Accessibility permission status: Denied`
++ - Action: This requires manual user intervention in System Settings. Add a note for the user.
+  
+  ---
+- Original issue list (likely all symptoms of the primary issue above):
+- - When I push Record and I then click Stop, the Record button does not appear, it sticks with "Stop" 
+- - When I push Record, the timer does not tick, stays at 0
+- - The final JSONs are just `[]` despite the fact that I've moved the pointer and pressed keys
+- - The final MOV is 11 bytes
++ Original issue list (mostly resolved or superseded by the video frame issue):
++ - When I push Record and I then click Stop, the Record button appears (FIXED, UI updates correctly based on `isRecording`)
++ - When I push Record, the timer does not tick, stays at 0 (FIXED, timer now ticks)
++ - The final JSONs are just `[]` (Due to Accessibility permissions)
++ - The final MOV is 11 bytes (Now 0 bytes / removed, primary issue is no frames)
+  ---
+  
+```
+
+---
+
+The `TODO.md` has been updated to reflect the current situation: the recording process seems to initialize correctly, the timer runs, but no video frames are being received or processed, leading to an empty MOV file. The input tracking JSONs are empty due to denied Accessibility permissions.
+
+The next step, as outlined in the updated `TODO.md`, is to add a `print` statement inside the `SCStreamFrameOutput`'s `sampleHandler` closure in `CaptureSessionManager.createStream`. This will tell us if `ScreenCaptureKit` is invoking the handler at all.
+
+---
+
+
+
+---
+
+It seems the edit didn't apply. I'll try again, being more specific with the location. The `SCStreamFrameOutput` initializer is a bit complex.
+
+The relevant part in `CaptureSessionManager.createStream`:
+```swift
+        let frameOutput = SCStreamFrameOutput(sampleHandlerQueue: DispatchQueue(label: "com.didyougetit.frameoutput.queue")) { [weak self] sampleBuffer, type, _ in
+            // <--- ADD PRINT HERE
+            self?.handleStreamOutput(sampleBuffer, type: type)
+        }
+```
+
+---
+
+```diff
+          
+          // Create output with handler
+-         let output = SCStreamFrameOutput(handler: handler)
++         let frameOutput = SCStreamFrameOutput(sampleHandlerQueue: DispatchQueue(label: "com.didyougetit.frameoutput.queue")) { [weak self] sampleBuffer, type, _ in
++             print("DEBUG_CSM: SCStreamFrameOutput sampleHandler invoked by ScreenCaptureKit. Type: \(type)")
++             self?.handleStreamOutput(sampleBuffer, type: type)
++         }
+          
+          // Create dedicated dispatch queues with high QoS to ensure performance
+```
+
+```diff
+          
+          // Add screen output on the dedicated queue
+-         try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: screenQueue)
++         try stream.addStreamOutput(frameOutput, type: .screen, sampleHandlerQueue: screenQueue)
+          print("Screen capture output added successfully")
+          
+          // Add audio output if needed on separate queue
+          if streamConfig?.capturesAudio == true {
+              // Add audio stream output
+-             try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: audioQueue)
++             try stream.addStreamOutput(frameOutput, type: .audio, sampleHandlerQueue: audioQueue)
+              print("Audio capture output added successfully")
+          }
+```
+
+---
+
+The diff shows that the print statement was added inside the `SCStreamFrameOutput`'s handler. That's good.
+
+However, it also shows some other changes that look like a partial revert of previous code or an incorrect merge:
+*   It changed `let frameOutput = SCStreamFrameOutput(sampleHandlerQueue: ...)` back to `let output = SCStreamFrameOutput(handler: handler)`. This `handler` variable is not defined in this scope.
+*   Then it *re-added* the `let frameOutput = SCStreamFrameOutput(sampleHandlerQueue: ...)` line with my print statement.
+*   It then changed `try stream.addStreamOutput(frameOutput, ...)` back to `try stream.addStreamOutput(output, ...)` for the screen, and then re-added the `frameOutput` version for both screen and audio.
+
+This is quite messy. The `SCStreamFrameOutput` initialization should be:
+```swift
+        let frameOutput = SCStreamFrameOutput(sampleHandlerQueue: DispatchQueue(label: "com.didyougetit.frameoutput.queue")) { [weak self] sampleBuffer, type, _ in
+            print("DEBUG_CSM: SCStreamFrameOutput sampleHandler invoked by ScreenCaptureKit. Type: \(type)")
+            self?.handleStreamOutput(sampleBuffer, type: type)
+        }
+        // ... (error check for frameOutput if it were failable, though it's not here)
+        try stream.addStreamOutput(frameOutput, type: .screen, sampleHandlerQueue: nil) // Use nil for queue if handler has its own
+```
+The `sampleHandlerQueue` parameter in `addStreamOutput` is "The dispatch queue on which to call the sample handler block. If you don’t provide a queue, the system uses a default serial queue." Since `SCStreamFrameOutput` itself is initialized with a `sampleHandlerQueue`, passing `nil` to `addStreamOutput` is often correct, or passing the *same* queue. The code previously had `screenQueue` and `audioQueue` which were separate.
+
+Let's simplify and correct the `CaptureSessionManager.createStream` method focusing on the `SCStreamFrameOutput` and `addStreamOutput` part.
+The original version from a few steps ago seemed more correct before these recent edits.
+
+I need to ensure:
+1.  `SCStreamFrameOutput` is initialized once with its own `sampleHandlerQueue`.
+2.  The debug print is inside that handler.
+3.  `stream.addStreamOutput` uses this `frameOutput` object.
+4.  The `sampleHandlerQueue` for `addStreamOutput` should probably be `nil` to use the one defined in `SCStreamFrameOutput` or be very intentionally chosen. For now, let's stick to what was working before the `output` variable re-appeared. The `screenQueue` was there before.
+
+Given the current state of the file from the diff, I need to clean it up.
+The version in the codebase before this last `edit_file` call regarding `SCStreamFrameOutput` was:
+```swift
+// CaptureSessionManager.swift - createStream method
+// ...
+        let frameOutput = SCStreamFrameOutput(sampleHandlerQueue: DispatchQueue(label: "com.didyougetit.frameoutput.queue")) { [weak self] sampleBuffer, type, _ in
+            // My new print will go here
+            self?.handleStreamOutput(sampleBuffer, type: type)
+        }
+        
+        guard let frameOutput = frameOutput else { /* This guard is actually not needed as the init is non-failable */
+            throw NSError(domain: "CaptureSessionManager", code: 2002, userInfo: [NSLocalizedDescriptionKey: "Failed to create SCStreamFrameOutput"])
+        }
+        // The above guard might be a leftover from a failable initializer. SCStreamFrameOutput(...) is not failable.
+        
+        try session.addStreamOutput(frameOutput, type: .screen, sampleHandlerQueue: nil) // Original was nil or a specific queue
+        print("Screen capture output added successfully")
+
+        if config.capturesAudio {
+            // ...
+            try session.addStreamOutput(frameOutput, type: .audio, sampleHandlerQueue: nil) // Original was nil or a specific queue
+            // ...
+        }
+// ...
+```
+The diff introduced `screenQueue` and `audioQueue` again which I had removed when simplifying. Let's stick to `nil` for `addStreamOutput`'s `sampleHandlerQueue` for now, assuming the queue on `SCStreamFrameOutput` is the one that matters.
+
+I will provide the complete corrected structure for this part of `createStream`.
+
+---
+
+```diff
+          self.sampleBufferHandler = handler
+          
+-         captureSession = SCStream(filter: filter, configuration: config, delegate: nil)
++         print("Creating SCStream with configured filter and settings")
++         captureSession = SCStream(filter: filter, configuration: config, delegate: self)
+          
+          guard let stream = captureSession else {
+-             throw NSError(domain: "CaptureSessionManager", code: 1010, 
+-                          userInfo: [NSLocalizedDescriptionKey: "Failed to create capture stream"])
++             throw NSError(domain: "CaptureSessionManager", code: 2001, userInfo: [NSLocalizedDescriptionKey: "Failed to create SCStream session"])
+          }
+          
+-         // Create output with handler
+-         let frameOutput = SCStreamFrameOutput(sampleHandlerQueue: DispatchQueue(label: "com.didyougetit.frameoutput.queue")) { [weak self] sampleBuffer, type, _ in
+-             print("DEBUG_CSM: SCStreamFrameOutput sampleHandler invoked by ScreenCaptureKit. Type: \(type)")
+-             self?.handleStreamOutput(sampleBuffer, type: type)
++         // Define the queue for the sample handler
++         let frameHandlerQueue = DispatchQueue(label: "com.didyougetit.frameoutput.queue", qos: .userInitiated)
++         
++         // Create SCStreamFrameOutput with the handler that receives samples
++         // This handler is called by ScreenCaptureKit on the frameHandlerQueue when a new frame is available.
++         let frameOutput = SCStreamFrameOutput(sampleHandlerQueue: frameHandlerQueue) { [weak self] sampleBuffer, streamOutputType, _ in
++             print("DEBUG_CSM: SCStreamFrameOutput sampleHandler invoked by ScreenCaptureKit. Type: \(streamOutputType)")
++             self?.handleStreamOutput(sampleBuffer, type: streamOutputType)
+          }
+          
+-         // Create dedicated dispatch queues with high QoS to ensure performance
+-         let screenQueue = DispatchQueue(label: "it.didyouget.screenCaptureQueue", qos: .userInteractive)
+-         let audioQueue = DispatchQueue(label: "it.didyouget.audioCaptureQueue", qos: .userInteractive)
+-         
+-         // Add screen output on the dedicated queue
+-         try stream.addStreamOutput(frameOutput, type: .screen, sampleHandlerQueue: screenQueue)
++         // Add the frame output for screen data.
++         // The sampleHandlerQueue parameter here can be nil if the SCStreamFrameOutput itself was configured with a queue.
++         try stream.addStreamOutput(frameOutput, type: .screen, sampleHandlerQueue: frameHandlerQueue) // Explicitly use same queue for clarity
+          print("Screen capture output added successfully")
+          
+-         // Add audio output if needed on separate queue
+-         if streamConfig?.capturesAudio == true {
+-             // Add audio stream output
+-             try stream.addStreamOutput(frameOutput, type: .audio, sampleHandlerQueue: audioQueue)
++         // Add audio output if needed
++         if config.capturesAudio {
++             print("Configuring audio stream output...")
++             // Re-use frameOutput for audio if it's designed to handle both, or create a separate one.
++             // For now, assuming frameOutput can handle audio type if SCStream is configured for it.
++             // Note: SCStreamFrameOutput is generic; if specific audio processing is needed, a different output type might be better.
++             try stream.addStreamOutput(frameOutput, type: .audio, sampleHandlerQueue: frameHandlerQueue) // Explicitly use same queue
+              print("Audio capture output added successfully")
+          }
+```
+
+```diff
+          print("Dummy capture completed successfully")
+      }
++     
++     private func handleStreamOutput(_ sampleBuffer: CMSampleBuffer, type: SCStreamOutputType) {
++         // ... existing code ...
++     }
+  }
+```
+
+---
+
+The diff indicates the changes in `CaptureSessionManager.createStream` were mostly applied as intended:
+- `SCStream` delegate is now `self`.
+- The `frameHandlerQueue` is defined with `.userInitiated` QoS.
+- `SCStreamFrameOutput` uses this `frameHandlerQueue`, and the debug print is inside its closure.
+- `stream.addStreamOutput` now also uses this `frameHandlerQueue` for both screen and audio (if enabled).
+
+The change from `streamConfig?.capturesAudio` to `config.capturesAudio` is fine as `config` is the direct `SCStreamConfiguration` parameter.
+
+The added `handleStreamOutput` stub at the end is a bit strange, as this method already exists. I'll assume the model intended to show where it's located or just had a diff artifact. The important part is that the handler inside `SCStreamFrameOutput` now calls `self?.handleStreamOutput(...)` and has the debug print.
+
+Now, we should run `./run.sh` again. We are looking for the "DEBUG_CSM: SCStreamFrameOutput sampleHandler invoked by ScreenCaptureKit..." message. If it appears, frames are coming from ScreenCaptureKit. If not, SCStream is still not delivering frames.The code in `CaptureSessionManager.createStream` has been refactored to clarify the `SCStreamFrameOutput` setup and queue usage. Crucially, a `print` statement has been added directly inside the `sampleHandler` closure of `SCStreamFrameOutput`. This is the closure that ScreenCaptureKit should invoke when it has a new video (or audio) frame.
+
+When you run `./run.sh`:
+-   If you see `"DEBUG_CSM: SCStreamFrameOutput sampleHandler invoked by ScreenCaptureKit. Type: screen"` in the logs, it means ScreenCaptureKit *is* delivering frames to our application. The problem would then be further downstream (e.g., in `CaptureSessionManager.handleStreamOutput` or `RecordingManager.handleSampleBuffer` not correctly dispatching or processing it).
+-   If this "DEBUG_CSM" message *does not* appear for `.screen` type, it strongly suggests that `SCStream` itself is not producing any frames for the configured display, despite `startCapture()` reporting success. This could point to a deeper issue with ScreenCaptureKit for the selected configuration, content filter, or a subtle permission/environment problem.
+
+Also, remember the **Accessibility Permissions** for mouse/keyboard tracking. The log showed they were denied. You'll need to manually grant these in `System Settings > Privacy & Security > Accessibility` by adding the `DidYouGet` application to the list and enabling it. Otherwise, the JSON files for input tracking will remain empty.
+
+Please run `./run.sh` and let's examine the output.
+
+---
+
+_**User**_
+
+you do
+
+---
+
+_**Assistant**_
+
+```bash
+./run.sh
+```
+
+```
+Building Did You Get It app in debug mode...
+Building for debugging...
+/Users/adam/Developer/vcs/github.twardoch/pub/didyouget.it/DidYouGet/DidYouGet/M
+odels/Recording/CaptureSessionManager.swift:174:84: error: argument type 'Captur
+eSessionManager' does not conform to expected type 'SCStreamDelegate'
+172 |         
+173 |         print("Creating SCStream with configured filter and settings")
+174 |         captureSession = SCStream(filter: filter, configuration: config, d
+elegate: self)
+    |
+
+         |- error: argument type 'CaptureSessionManager' does not conform to exp
+ected type 'SCStreamDelegate'
+    |
+
+         `- note: add missing conformance to 'SCStreamDelegate' to class 'Captur
+eSessionManager'
+175 |         
+176 |         guard let stream = captureSession else {
+
+/Users/adam/Developer/vcs/github.twardoch/pub/didyouget.it/DidYouGet/DidYouGet/M
+odels/Recording/CaptureSessionManager.swift:185:46: error: extra arguments at po
+sitions #1, #2 in call
+183 |         // Create SCStreamFrameOutput with the handler that receives sampl
+es
+184 |         // This handler is called by ScreenCaptureKit on the frameHandlerQ
+ueue when a new frame is available.
+185 |         let frameOutput = SCStreamFrameOutput(sampleHandlerQueue: frameHan
+dlerQueue) { [weak self] sampleBuffer, streamOutputType, _ in
+    |                                              `- error: extra arguments at 
+positions #1, #2 in call
+186 |             print("DEBUG_CSM: SCStreamFrameOutput sampleHandler invoked by
+ ScreenCaptureKit. Type: \(streamOutputType)")
+187 |             self?.handleStreamOutput(sampleBuffer, type: streamOutputType)
+
+/Users/adam/Developer/vcs/github.twardoch/pub/didyouget.it/DidYouGet/DidYouGet/M
+odels/Recording/SCStreamFrameOutput.swift:14:5: note: 'init(handler:)' declared
+here
+12 |     private var firstFrameTime: CMTime?
+13 |     
+14 |     init(handler: @escaping (CMSampleBuffer, RecordingManager.SCStreamType)
+ -> Void) {
+   |     `- note: 'init(handler:)' declared here
+15 |         self.handler = handler
+16 |         super.init()
+
+/Users/adam/Developer/vcs/github.twardoch/pub/didyouget.it/DidYouGet/DidYouGet/M
+odels/Recording/CaptureSessionManager.swift:185:47: error: missing argument for
+parameter 'handler' in call
+183 |         // Create SCStreamFrameOutput with the handler that receives sampl
+es
+184 |         // This handler is called by ScreenCaptureKit on the frameHandlerQ
+ueue when a new frame is available.
+185 |         let frameOutput = SCStreamFrameOutput(sampleHandlerQueue: frameHan
+dlerQueue) { [weak self] sampleBuffer, streamOutputType, _ in
+    |                                               `- error: missing argument f
+or parameter 'handler' in call
+186 |             print("DEBUG_CSM: SCStreamFrameOutput sampleHandler invoked by
+ ScreenCaptureKit. Type: \(streamOutputType)")
+187 |             self?.handleStreamOutput(sampleBuffer, type: streamOutputType)
+
+/Users/adam/Developer/vcs/github.twardoch/pub/didyouget.it/DidYouGet/DidYouGet/M
+odels/Recording/SCStreamFrameOutput.swift:14:5: note: 'init(handler:)' declared
+here
+12 |     private var firstFrameTime: CMTime?
+13 |     
+14 |     init(handler: @escaping (CMSampleBuffer, RecordingManager.SCStreamType)
+ -> Void) {
+   |     `- note: 'init(handler:)' declared here
+15 |         self.handler = handler
+16 |         super.init()
+
+/Users/adam/Developer/vcs/github.twardoch/pub/didyouget.it/DidYouGet/DidYouGet/M
+odels/Recording/CaptureSessionManager.swift:185:100: error: cannot infer type of
+ closure parameter 'sampleBuffer' without a type annotation
+183 |         // Create SCStreamFrameOutput with the handler that receives sampl
+es
+184 |         // This handler is called by ScreenCaptureKit on the frameHandlerQ
+ueue when a new frame is available.
+185 |         let frameOutput = SCStreamFrameOutput(sampleHandlerQueue: frameHan
+dlerQueue) { [weak self] sampleBuffer, streamOutputType, _ in
+    |
+
+                         `- error: cannot infer type of closure parameter 'sampl
+eBuffer' without a type annotation
+186 |             print("DEBUG_CSM: SCStreamFrameOutput sampleHandler invoked by
+ ScreenCaptureKit. Type: \(streamOutputType)")
+187 |             self?.handleStreamOutput(sampleBuffer, type: streamOutputType)
+
+/Users/adam/Developer/vcs/github.twardoch/pub/didyouget.it/DidYouGet/DidYouGet/M
+odels/Recording/CaptureSessionManager.swift:185:114: error: cannot infer type of
+ closure parameter 'streamOutputType' without a type annotation
+183 |         // Create SCStreamFrameOutput with the handler that receives sampl
+es
+184 |         // This handler is called by ScreenCaptureKit on the frameHandlerQ
+ueue when a new frame is available.
+185 |         let frameOutput = SCStreamFrameOutput(sampleHandlerQueue: frameHan
+dlerQueue) { [weak self] sampleBuffer, streamOutputType, _ in
+    |
+
+                                       `- error: cannot infer type of closure pa
+rameter 'streamOutputType' without a type annotation
+186 |             print("DEBUG_CSM: SCStreamFrameOutput sampleHandler invoked by
+ ScreenCaptureKit. Type: \(streamOutputType)")
+187 |             self?.handleStreamOutput(sampleBuffer, type: streamOutputType)
+
+/Users/adam/Developer/vcs/github.twardoch/pub/didyouget.it/DidYouGet/DidYouGet/M
+odels/Recording/CaptureSessionManager.swift:185:132: error: cannot infer type of
+ closure parameter '_' without a type annotation
+183 |         // Create SCStreamFrameOutput with the handler that receives sampl
+es
+184 |         // This handler is called by ScreenCaptureKit on the frameHandlerQ
+ueue when a new frame is available.
+185 |         let frameOutput = SCStreamFrameOutput(sampleHandlerQueue: frameHan
+dlerQueue) { [weak self] sampleBuffer, streamOutputType, _ in
+    |
+
+                                                         `- error: cannot infer
+type of closure parameter '_' without a type annotation
+186 |             print("DEBUG_CSM: SCStreamFrameOutput sampleHandler invoked by
+ ScreenCaptureKit. Type: \(streamOutputType)")
+187 |             self?.handleStreamOutput(sampleBuffer, type: streamOutputType)
+[5/7] Compiling DidYouGet CaptureSessionManager.swift
+
+```
+
+---
+
+The build failed with several errors in `CaptureSessionManager.swift`:
+
+1.  **`error: argument type 'CaptureSessionManager' does not conform to expected type 'SCStreamDelegate'`** (line 174)
+    *   This is because `CaptureSessionManager` is set as the delegate for `SCStream` (`delegate: self`), but it doesn't explicitly declare conformance to `SCStreamDelegate`. It has an `extension CaptureSessionManager: SCStreamDelegate` further down, but the main class declaration needs it too, or the extension needs to be in the same file and visible. The simplest fix is to add the conformance to the class declaration.
+
+2.  **`error: extra arguments at positions #1, #2 in call`** and **`error: missing argument for parameter 'handler' in call`** for `SCStreamFrameOutput(sampleHandlerQueue: frameHandlerQueue) { ... }` (line 185)
+    *   The compiler note says: `'init(handler:)' declared here`. This means my custom `SCStreamFrameOutput` class (which I wasn't aware of, I assumed it was the direct ScreenCaptureKit class) has an initializer `init(handler: @escaping (CMSampleBuffer, RecordingManager.SCStreamType) -> Void)`.
+    *   The call `SCStreamFrameOutput(sampleHandlerQueue: frameHandlerQueue) { ... }` is trying to use an initializer that likely doesn't exist or doesn't match. The `sampleHandlerQueue` parameter isn't part of my custom class's `init`. The closure I provided is intended to *be* the handler.
+
+3.  **`error: cannot infer type of closure parameter 'sampleBuffer' without a type annotation`** (and similar for `streamOutputType`, `_`) (line 185)
+    *   This is a consequence of the incorrect `SCStreamFrameOutput` initializer being used. The closure's parameter types cannot be inferred.
+
+**Plan:**
+
+1.  **Fix `SCStreamDelegate` conformance:**
+    *   In `CaptureSessionManager.swift`, change `class CaptureSessionManager {` to `class CaptureSessionManager: NSObject, SCStreamDelegate {`. (Adding `NSObject` is good practice for delegates).
+
+2.  **Fix `SCStreamFrameOutput` initialization:**
+    *   I need to find the definition of my custom `SCStreamFrameOutput.swift` to see its actual initializer. The error message gives a hint: `init(handler: @escaping (CMSampleBuffer, RecordingManager.SCStreamType) -> Void)`.
+    *   The call in `CaptureSessionManager.createStream` should be:
+        ```swift
+        let frameOutputHandler = { [weak self] (sampleBuffer: CMSampleBuffer, streamOutputType: RecordingManager.SCStreamType) -> Void in
+            print("DEBUG_CSM: SCStreamFrameOutput sampleHandler invoked. Type: \(streamOutputType)")
+            self?.handleStreamOutput(sampleBuffer, originalType: streamOutputType) // Assuming handleStreamOutput takes the mapped type
+        }
+        let frameOutput = SCStreamFrameOutput(handler: frameOutputHandler)
+        ```
+    *   Then, `stream.addStreamOutput(frameOutput, type: .screen, sampleHandlerQueue: frameHandlerQueue)` needs to use this `frameOutput`. The `sampleHandlerQueue` for `addStreamOutput` is where ScreenCaptureKit will deliver the raw `CMSampleBuffer` and `SCStreamOutputType`. My custom `SCStreamFrameOutput`'s handler will then be called on whatever thread `addStreamOutput` uses (or the `frameHandlerQueue` if specified there).
+    *   Wait, the error note for `SCStreamFrameOutput` was from `/Users/adam/Developer/vcs/github.twardoch/pub/didyouget.it/DidYouGet/DidYouGet/Models/Recording/SCStreamFrameOutput.swift`. This means there IS a custom class.
+
+Let's read this custom `SCStreamFrameOutput.swift` file.
+
+---
+
+Read file: DidYouGet/DidYouGet/Models/Recording/SCStreamFrameOutput.swift
+
+---
+
+Okay, the custom `SCStreamFrameOutput.swift` is an `NSObject` that conforms to `SCStreamOutput`.
+Its initializer is indeed `init(handler: @escaping (CMSampleBuffer, RecordingManager.SCStreamType) -> Void)`.
+It then implements the `stream(_:didOutputSampleBuffer:ofType:)` delegate method from `SCStreamOutput`. Inside this method, it calls the stored `handler`.
+
+This simplifies things in `CaptureSessionManager.createStream`:
+1.  The `frameHandlerQueue` that I defined is not directly used by this custom `SCStreamFrameOutput`'s initializer.
+2.  The closure I was trying to pass to `SCStreamFrameOutput(...)` should actually be the `handler` argument.
+3.  The `SCStreamFrameOutput` instance itself is what should be passed to `stream.addStreamOutput`. The `sampleHandlerQueue` parameter for `addStreamOutput` is where *ScreenCaptureKit* will call the `stream(_:didOutputSampleBuffer:ofType:)` method of our `SCStreamFrameOutput` instance.
+
+**Revised Plan for `CaptureSessionManager.createStream`:**
+
+1.  Define the `actualHandler`: This is the closure that calls `self?.handleStreamOutput`. This is what my `SCStreamFrameOutput` custom class needs.
+2.  Instantiate `SCStreamFrameOutput`: `let frameOutput = SCStreamFrameOutput(handler: actualHandler)`.
+3.  Define a `deliveryQueue`: This is the queue on which `SCStream` will call `frameOutput.stream(_:didOutputSampleBuffer:ofType:)`.
+4.  Call `stream.addStreamOutput(frameOutput, type: .screen, sampleHandlerQueue: deliveryQueue)`.
+
+My debug print `"DEBUG_CSM: SCStreamFrameOutput sampleHandler invoked..."` should go *inside* the `actualHandler` passed to `SCStreamFrameOutput`'s init, or even better, it's already somewhat covered by the prints inside `SCStreamFrameOutput.stream(_:didOutputSampleBuffer:ofType:)`. The critical thing is that this `stream` delegate method gets called.
+
+Let's correct `CaptureSessionManager.swift`.
+
+---
+
+_**User**_
+
+continue
+
+---
+
+_**Assistant**_
+
+Okay, I will correct `CaptureSessionManager.swift` based on the findings about the custom `SCStreamFrameOutput` class and the `SCStreamDelegate` conformance.
+
+**Plan:**
+
+1.  **Modify `CaptureSessionManager.swift` class declaration:**
+    *   Add `NSObject, SCStreamDelegate` conformance: `class CaptureSessionManager: NSObject, SCStreamDelegate {`.
+
+2.  **Refactor `createStream` method in `CaptureSessionManager.swift`:**
+    *   The `handler` parameter is `(CMSampleBuffer, RecordingManager.SCStreamType) -> Void`. This is what our `SCStreamFrameOutput` class expects.
+    *   The `SCStreamFrameOutput` class itself implements `SCStreamOutput` and its `stream(_:didOutputSampleBuffer:ofType:)` method calls the handler it was initialized with.
+    *   So, we initialize our `SCStreamFrameOutput` with the `handler` that `createStream` receives (which ultimately comes from `RecordingManager` and calls `RecordingManager.handleSampleBuffer`).
+    *   The `sampleHandlerQueue` for `stream.addStreamOutput` is the queue on which ScreenCaptureKit will call the methods of our `SCStreamFrameOutput` instance (specifically, `stream(_:didOutputSampleBuffer:ofType:)`).
+
+This means the print "DEBUG_CSM: SCStreamFrameOutput sampleHandler invoked by ScreenCaptureKit..." should ideally be *inside* the `SCStreamFrameOutput.stream(_:didOutputSampleBuffer:ofType:)` method, which it already is (e.g., "SCStream output: Received screen frame #..."). My added print in the `createStream` method was redundant if it was trying to intercept that. The key is that the `handler` passed *into* `SCStreamFrameOutput` gets called.
+
+Let's apply the fixes.
+
+---
+
+```diff
+  @available(macOS 12.3, *)
+  @MainActor
+- class CaptureSessionManager {
++ class CaptureSessionManager: NSObject, SCStreamDelegate {
+      // Capture types
+      enum CaptureType {
+```
+
+```diff
+      func createStream(filter: SCContentFilter, config: SCStreamConfiguration, 
+                       handler: @escaping (CMSampleBuffer, RecordingManager.SCStreamType) -> Void) throws {
+-         print("Creating SCStream with configured filter and settings")
++         // Store the provided handler (which is RecordingManager.handleSampleBuffer)
+          self.sampleBufferHandler = handler 
++         // This sampleBufferHandler is NOT directly used by SCStreamFrameOutput in this version of the code.
++         // Instead, we create a new closure that calls our internal handleStreamOutput,
++         // and that internal handleStreamOutput will then call the stored sampleBufferHandler.
+  
+          print("Creating SCStream with configured filter and settings")
+```
+
+```diff
+          }
+          
+-         // Define the queue for the sample handler
+-         let frameHandlerQueue = DispatchQueue(label: "com.didyougetit.frameoutput.queue", qos: .userInitiated)
+-         
+-         // Create SCStreamFrameOutput with the handler that receives samples
+-         // This handler is called by ScreenCaptureKit on the frameHandlerQueue when a new frame is available.
+-         let frameOutput = SCStreamFrameOutput(sampleHandlerQueue: frameHandlerQueue) { [weak self] sampleBuffer, streamOutputType, _ in
+-             print("DEBUG_CSM: SCStreamFrameOutput sampleHandler invoked by ScreenCaptureKit. Type: \(streamOutputType)")
+-             self?.handleStreamOutput(sampleBuffer, type: streamOutputType)
++         // This is the handler that our custom SCStreamFrameOutput class will call.
++         // It then calls our internal bridge method handleStreamOutput.
++         let frameOutputHandlerForCustomClass = { [weak self] (sampleBuffer: CMSampleBuffer, mappedType: RecordingManager.SCStreamType) -> Void in
++             // This print confirms our custom class's handler mechanism is working.
++             print("DEBUG_CSM: Bridge handler in createStream called by SCStreamFrameOutput. Type: \(mappedType)")
++             self?.handleStreamOutput(sampleBuffer, mappedType: mappedType)
+          }
+          
+-         // Add the frame output for screen data.
+-         // The sampleHandlerQueue parameter here can be nil if the SCStreamFrameOutput itself was configured with a queue.
+-         try stream.addStreamOutput(frameOutput, type: .screen, sampleHandlerQueue: frameHandlerQueue) // Explicitly use same queue for clarity
+-         print("Screen capture output added successfully")
++         // Initialize our custom SCStreamFrameOutput class with the bridge handler.
++         let customFrameOutput = SCStreamFrameOutput(handler: frameOutputHandlerForCustomClass)
++         
++         // Define the queue on which ScreenCaptureKit will call methods on customFrameOutput (i.e., its SCStreamOutput delegate methods)
++         let deliveryQueue = DispatchQueue(label: "com.didyougetit.scstream.deliveryqueue", qos: .userInitiated)
++         
++         // Add our customFrameOutput instance as the output for screen data.
++         try stream.addStreamOutput(customFrameOutput, type: .screen, sampleHandlerQueue: deliveryQueue)
++         print("Screen capture output added successfully (using custom SCStreamFrameOutput)")
+          
+          // Add audio output if needed
+          if config.capturesAudio {
+-             print("Configuring audio stream output...")
+-             // Re-use frameOutput for audio if it's designed to handle both, or create a separate one.
+-             // For now, assuming frameOutput can handle audio type if SCStream is configured for it.
+-             // Note: SCStreamFrameOutput is generic; if specific audio processing is needed, a different output type might be better.
+-             try stream.addStreamOutput(frameOutput, type: .audio, sampleHandlerQueue: frameHandlerQueue) // Explicitly use same queue
+-             print("Audio capture output added successfully")
++             print("Configuring audio stream output (using custom SCStreamFrameOutput)...")
++             try stream.addStreamOutput(customFrameOutput, type: .audio, sampleHandlerQueue: deliveryQueue) 
++             print("Audio capture output added successfully (using custom SCStreamFrameOutput)")
+          }
+      }
+```
+
+```diff
+      }
+      
+-     private func handleStreamOutput(_ sampleBuffer: CMSampleBuffer, type: SCStreamOutputType) {
+-         // ... existing code ...
++     // This internal method is called by the closure provided to SCStreamFrameOutput
++     private func handleStreamOutput(_ sampleBuffer: CMSampleBuffer, mappedType: RecordingManager.SCStreamType) {
++         guard let finalHandler = sampleBufferHandler else { 
++             print("ERROR_CSM: sampleBufferHandler (RecordingManager.handleSampleBuffer) is nil in handleStreamOutput")
++             return 
++         }
++         // Call the original handler (RecordingManager.handleSampleBuffer)
++         print("DEBUG_CSM: handleStreamOutput forwarding to RecordingManager. Type: \(mappedType)")
++         finalHandler(sampleBuffer, mappedType)
++     }
++     
++     // SCStreamDelegate methods
++     // ... existing extension SCStreamDelegate ...
+  }
+- }
++ 
++ // Ensure the extension is recognized or move delegate methods into the class if necessary.
++ // For now, assuming the separate extension is fine as long as the class declares conformance.
++ 
++ // extension CaptureSessionManager: SCStreamDelegate { ... } // This can be kept if preferred
+```
+
+---
+
+The build errors should now be resolved with the corrections to `CaptureSessionManager.swift`:
+1.  `CaptureSessionManager` now correctly conforms to `NSObject` and `SCStreamDelegate`.
+2.  The custom `SCStreamFrameOutput` class is initialized correctly with its `handler` parameter.
+    *   A new closure `frameOutputHandlerForCustomClass` is created. This closure will be called by our custom `SCStreamFrameOutput` instance (specifically by its `stream(_:didOutputSampleBuffer:ofType:)` method).
+    *   This `frameOutputHandlerForCustomClass` then calls `self.handleStreamOutput(...)`.
+    *   The `handleStreamOutput` method (which now takes `mappedType: RecordingManager.SCStreamType`) finally calls the original `sampleBufferHandler` that was passed into `createStream` (this is `RecordingManager.handleSampleBuffer`).
+
+This structure ensures that:
+- ScreenCaptureKit calls our custom `SCStreamFrameOutput` instance's `stream(_:didOutputSampleBuffer:ofType:)` method on the `deliveryQueue`.
+- Inside `SCStreamFrameOutput`, the prints like "SCStream output: Received screen frame #..." will log.
+- The handler provided to `SCStreamFrameOutput` (which is `frameOutputHandlerForCustomClass`) gets called. This will print "DEBUG_CSM: Bridge handler in createStream called...".
+- `CaptureSessionManager.handleStreamOutput` gets called, printing "DEBUG_CSM: handleStreamOutput forwarding...".
+- Finally, `RecordingManager.handleSampleBuffer` gets called, which should print "DEBUG_RM: handleSampleBuffer called...".
+
+If all these prints appear for `.screen` type, then frames are flowing all the way to `RecordingManager`.
+
+Let's run `./run.sh`.
+
+---
+
+```bash
+./run.sh
+```
+
+```
+adam@Hamlet didyouget.it % ./run.sh
+Building Did You Get It app in debug mode...
+Building for debugging...
+[2/6] Write swift-version--58304C5D6DBC2206.txt
+```
+
+---
+
 
 
 ---

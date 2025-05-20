@@ -459,8 +459,10 @@ class RecordingManager: ObservableObject {
     
     @MainActor
     private func handleSampleBuffer(_ sampleBuffer: CMSampleBuffer, type: SCStreamType) {
+        print("DEBUG_RM: handleSampleBuffer called with type: \(type)")
         // Skip processing if paused
         if isPaused {
+            print("DEBUG_RM: handleSampleBuffer - isPaused is true, returning.")
             return
         }
         
