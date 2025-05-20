@@ -20,8 +20,8 @@ I want a fast performant app `Did You Get It` (Mac identifier it.didyouget.mac, 
 
 CURRENT PROBLEM: 
 
-- When I click Record in the UI, it does switch to the "Stop Recording" UI mode, but the timer does not start.
-- When I click Stop Recording, the UI switches back to the "Record" UI mode, but no MOV or JSON files are produced.
+- When I click Record in the UI, the UI becomes unresponsive, and I can only force quit the app.
+
 
 ====
 
