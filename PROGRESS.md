@@ -274,10 +274,13 @@
 
 ## Current Status
 
-**Project Start Date**: January 2025 **Current Phase**: Phase 5 - File Management (95% complete) **Completion**: 75%
+**Project Start Date**: January 2025 **Current Phase**: Phase 5 - File Management (95% complete) **Completion**: 80%
 
 ### Recent Updates
 
+- Fixed UI responsiveness issues and recording output problems in RecordingManager
+- Resolved timer initialization that prevented the recording timer from starting
+- Implemented immediate UI state updates during stop recording process
 - Fixed critical issue with zero-length video files by implementing timestamp validation and buffer handling
 - Created project specification (SPEC.md)
 - Initialized progress tracking (PROGRESS.md)
@@ -352,6 +355,9 @@
 - ~~FIXED: When clicking Record then Stop, the timer never starts and no MOV or JSON files are produced.~~
 - ~~FIXED: Recording produces empty .mov files (0 bytes) even though the JSON files for mouse and keyboard tracking are created correctly~~
 - ~~FIXED: Recording state isn't maintained when the app UI is closed and reopened (menu bar item remains)~~
+- ~~FIXED: Timer does not start running after clicking Record~~
+- ~~FIXED: Stop button does not change back to Record button after clicking Stop~~
+- ~~FIXED: App creates empty folders with no files inside~~
 
 ### Next Steps
 

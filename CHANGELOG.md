@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Fixed UI responsiveness issues that caused the app to become unresponsive after clicking Record
+- Fixed timer initialization issues that prevented the recording timer from starting
+- Implemented immediate UI state updates during stop recording process to ensure accurate feedback to the user
+- Fixed stop button not returning to Record button state after stopping recording
+- Fixed issue where the app created empty folders with no files inside
 - Fixed critical issue with zero-length video files (.mov) while maintaining mouse and keyboard tracking
 - Resolved problems with invalid sample buffer timestamps from ScreenCaptureKit
 - Fixed potential thread synchronization issues in video frame processing pipeline
@@ -53,6 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Updated .gitignore for Swift/macOS development
+- Enhanced error handling to address file creation issues, ensuring output directories are properly validated
+- Improved diagnostics for recording processes, including permission checks and better error reporting
 - Fixed recording state persistence when the UI is hidden and shown again
   - Modified ContentView's onAppear behavior to check if recording is active before resetting state
   - Ensured the recording continues properly when the UI is hidden and shown again
