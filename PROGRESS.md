@@ -284,6 +284,7 @@
 ### Recent Updates
 
 - Fixed UI responsiveness issues and recording output problems in RecordingManager
+- Resolved stop-recording state bug that prevented finalization and left empty folders
 - Resolved timer initialization that prevented the recording timer from starting
 - Implemented immediate UI state updates during stop recording process
 - Fixed critical issue with zero-length video files by implementing timestamp validation and buffer handling

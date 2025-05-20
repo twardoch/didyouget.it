@@ -448,35 +448,13 @@ class RecordingManager: ObservableObject {
     
     @MainActor
     func stopRecording() async {
-        // First, immediately update UI state to reflect recording has stopped
-        // This ensures UI changes even if the teardown process has errors
-        print("Stopping recording - updating UI state immediately")
-        isRecording = false
-        isPaused = false
-        
-        // Stop the timer immediately to prevent UI updates during teardown
-        if let timer = self.timer {
-            timer.invalidate()
-            self.timer = nil
-            print("Timer stopped")
-        }
-        
-        // Reset duration
-        recordingDuration = 0
-        
+        // Simply forward to the async teardown without altering state first
+        // to avoid bypassing the checks in stopRecordingAsync().
+        print("Stop recording requested")
         do {
-            // Now perform actual teardown of recording infrastructure
             try await stopRecordingAsync()
         } catch {
             print("Error in stopRecording: \(error)")
-        }
-        
-        // Double-check that recording state is reset properly
-        await MainActor.run {
-            if isRecording {
-                print("WARNING: isRecording was still true after stopRecording - forcing to false")
-                isRecording = false
-            }
         }
     }
     

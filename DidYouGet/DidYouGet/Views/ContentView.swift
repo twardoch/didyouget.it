@@ -83,11 +83,8 @@ struct ContentView: View {
                     HStack(spacing: 8) {
                         // Stop button
                         Button(action: {
-                            // Execute on the main thread with a Task to handle async
+                            // Execute stop asynchronously without altering the state first
                             Task(priority: .userInitiated) {
-                                // Make UI changes immediately
-                                recordingManager.isRecording = false 
-                                // Then stop the recording in the background
                                 await recordingManager.stopRecording()
                             }
                         }) {
