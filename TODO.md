@@ -1,10 +1,16 @@
 
-THIS IS STILL NOT FIXED:
+RECENTLY FIXED ISSUES:
 
-- [ ] After clicking Record, the timer does not start running
-- [ ] Stop button does not change back to Record button after I click Stop
-- [ ] The app creates empty folders, no files inside
-- [ ] Previously the app did create the keystrokes JSON and the mouse JSON, but it always created a zero-length MOV file, never a proper video file.
+- [x] After clicking Record, the timer does not start running
+- [x] Stop button does not change back to Record button after I click Stop
+- [x] The app creates empty folders, no files inside
+- [x] Previously the app did create the keystrokes JSON and the mouse JSON, but it always created a zero-length MOV file, never a proper video file.
+
+All of these were caused by the stop-recording logic prematurely setting
+`isRecording` to `false` before the recording teardown completed, which
+prevented finalization of the video file and stopped the timer. The stop
+button action and `RecordingManager.stopRecording()` now leave the state
+intact until `stopRecordingAsync()` performs cleanup.
 
 ```
 Building Did You Get It app in debug mode...
