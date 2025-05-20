@@ -324,6 +324,11 @@
    - Set isRecording flag before capture session setup to ensure frames are processed
    - Removed isRecording check in processSampleBuffer to ensure frames are captured during initialization
    - Enhanced frame processing with high priority task dispatching
+   - Fixed buffer handling with proper CMSampleBufferCreateCopy error checking
+   - Added detailed diagnostics and file size verification at multiple stages
+   - Implemented proper thread safety with buffer copies between queues
+   - Fixed OSStatus comparison to use the correct noErr constant
+   - Added extensive debugging and logging of file sizes and writer states
 
 2. **Recording state persistence** - Fixed issue where recording state wasn't maintained when app UI is hidden/shown
    - Modified ContentView's onAppear behavior to check if recording is active before resetting state
@@ -333,6 +338,7 @@
    - Added frame counter to SCStreamFrameOutput to better monitor frame reception
    - Improved task priority for frame processing to ensure real-time handling
    - Enhanced logging throughout the recording pipeline for better diagnostics
+   - Fixed URL handling in finalization code to prevent optional unwrapping issues
 
 4. **Missing JSON files** - Enhanced input tracking initialization, file creation, and error handling
 5. **File verification** - Added more robust checks to verify file existence and contents after recording

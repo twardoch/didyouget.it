@@ -52,10 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed empty MOV files issue by properly initializing isRecording flag before capture setup
   - Set isRecording flag before capture session setup to ensure frames are processed
   - Removed isRecording check in processSampleBuffer to ensure frames are processed during initialization
+  - Enhanced buffer handling with CMSampleBufferCreateCopy for better thread safety
+  - Fixed OSStatus comparison for CMSampleBufferCreateCopy to use noErr constant
+  - Added extensive debugging and error logging throughout sample buffer processing
 - Improved frame processing in SCStream handler to ensure video frames are captured correctly
   - Enhanced stream handler with high priority task dispatching
   - Improved task priority for frame processing to ensure timely handling
   - Optimized logging to prevent console flooding while still providing critical information
+  - Fixed URL handling in writer finalization to properly access file properties
+  - Added detailed file size verification at multiple stages of the recording process
 - Fixed critical crash in recording engine during sample buffer processing
 - Redesigned sample buffer handling to use proper MainActor isolation
 - Fixed thread synchronization issues across the recording pipeline
