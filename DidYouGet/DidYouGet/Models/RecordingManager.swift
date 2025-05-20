@@ -263,7 +263,7 @@ class RecordingManager: ObservableObject {
                 recordAudio: preferences.recordAudio
             )
             
-            print("VIDEO CONFIG: Width=\(streamConfig.width), Height=\(streamConfig.height), BitRate=\(preferences.videoQuality.megabitsPerSecond)Mbps, FrameRate=\(preferences.frameRate)")
+            print("VIDEO CONFIG: Width=\(streamConfig.width), Height=\(streamConfig.height), Quality=\(preferences.videoQuality.rawValue), FrameRate=\(preferences.frameRate)")
             
             // CRITICAL: Add a dummy capture callback to ensure proper initialization
             // This ensures the capture system is properly warmed up
@@ -286,17 +286,29 @@ class RecordingManager: ObservableObject {
                 frameRate: preferences.frameRate,
                 videoQuality: preferences.videoQuality
             )
-            
+            print("DEBUG: Returned from videoProcessor.setupVideoWriter successfully.")
+
             // Setup audio writer if needed
+            print("DEBUG: Checking audio preferences...")
             if preferences.recordAudio {
+                print("DEBUG: Audio recording is ENABLED in preferences.")
                 if preferences.mixAudioWithVideo {
+                    print("DEBUG: Audio mixing with video is ENABLED. Configuring for video writer.")
                     // Configure audio input for video writer
                     _ = audioProcessor.configureAudioInputForVideoWriter(videoWriter: videoProcessor.videoAssetWriter!)
+                    print("DEBUG: audioProcessor.configureAudioInputForVideoWriter called.")
                 } else if let audioURL = paths.audioURL {
+                    print("DEBUG: Audio mixing with video is DISABLED. Setting up separate audio writer at URL: \(audioURL.path)")
                     // Create separate audio writer
                     _ = try audioProcessor.setupAudioWriter(url: audioURL)
+                    print("DEBUG: audioProcessor.setupAudioWriter called.")
+                } else {
+                    print("DEBUG: Separate audio selected, but audioOutputURL is nil. No separate audio writer will be set up.")
                 }
+            } else {
+                print("DEBUG: Audio recording is DISABLED in preferences.")
             }
+            print("DEBUG: Finished checking audio preferences.")
             
             // Start video and audio writers
             print("Attempting to start video writer...")

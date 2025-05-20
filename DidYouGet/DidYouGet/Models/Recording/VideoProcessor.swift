@@ -64,9 +64,8 @@ class VideoProcessor {
             videoAssetWriter = try AVAssetWriter(outputURL: url, fileType: .mov)
             videoOutputURL = url
             
-            // Write a placeholder file immediately to ensure disk space
-            try "placeholder".data(using: .utf8)?.write(to: url)
-            print("✓ Created placeholder file for video writer")
+            // try "placeholder".data(using: .utf8)?.write(to: url) // Commented out this potentially problematic line
+            // print("✓ Created placeholder file for video writer") // Also comment out its corresponding print
             
             // Verify the writer was created successfully
             guard let writer = videoAssetWriter else {
@@ -133,29 +132,34 @@ class VideoProcessor {
                     AVVideoExpectedSourceFrameRateKey: frameRate,
                     AVVideoMaxKeyFrameIntervalKey: frameRate, 
                     AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
-                    // Add these reliability settings
-                    AVVideoAllowFrameReorderingKey: false,    // Disable frame reordering for streaming
-                    AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCABAC, // Use CABAC for better quality
-                    "RequiresBFrames": false                  // Avoid B-frames for better streaming
+                    AVVideoAllowFrameReorderingKey: NSNumber(value: false),
+                    AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCABAC
                 ]
             ]
             
             // Log detailed configuration for debugging
             print("VIDEO CONFIG: Width=\(width), Height=\(height), BitRate=\(bitrate/1_000_000)Mbps, FrameRate=\(frameRate)")
             
+            print("DEBUG_VP: Attempting to create AVAssetWriterInput...")
             videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+            print("DEBUG_VP: AVAssetWriterInput creation attempted (videoInput is \(videoInput == nil ? "nil" : "not nil")).")
             guard let videoInput = videoInput else {
                 throw NSError(domain: "VideoProcessor", code: 1005, userInfo: [NSLocalizedDescriptionKey: "Failed to create video input"])
             }
             
             videoInput.expectsMediaDataInRealTime = true
             
+            print("DEBUG_VP: Checking if writer can add videoInput...")
             guard writer.canAdd(videoInput) else {
+                print("DEBUG_VP: Writer cannot add videoInput.")
                 throw NSError(domain: "VideoProcessor", code: 1006, userInfo: [NSLocalizedDescriptionKey: "Cannot add video input to asset writer"])
             }
+            print("DEBUG_VP: Writer can add videoInput. Attempting to add...")
             
             writer.add(videoInput)
+            print("DEBUG_VP: writer.add(videoInput) executed.")
             
+            print("DEBUG_VP: Attempting to return from setupVideoWriter...")
             return writer
         } catch {
             print("CRITICAL ERROR: Failed to create video asset writer: \(error)")
