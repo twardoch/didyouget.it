@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed stop button not returning to Record button state after stopping recording
 - Fixed issue where the app created empty folders with no files inside
 - Fixed critical issue with zero-length video files (.mov) while maintaining mouse and keyboard tracking
+- Removed leftover empty recording directories and automatically delete zero-length video files
 - Resolved problems with invalid sample buffer timestamps from ScreenCaptureKit
 - Fixed potential thread synchronization issues in video frame processing pipeline
 - Improved error detection and handling throughout the recording process
@@ -55,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Option to mix audio with video or save it separately
 - Input device detection for audio, mouse, and keyboard tracking
 - Added frame counter to SCStreamFrameOutput for better monitoring of received frames
+- Automatic cleanup of empty recording folders after recording
 
 ### Changed
 - Updated .gitignore for Swift/macOS development
