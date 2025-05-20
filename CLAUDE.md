@@ -18,12 +18,12 @@ I want a fast performant app `Did You Get It` (Mac identifier it.didyouget.mac, 
 
 ## TODO
 
-- The app generally workflows
-- `Preferences...` button is non-functional.
-- `Recording Options` should be arranged one below the other. Right now their text doesn't fit. 
-- When I switch to `Area` tab and click `Select Area`, the UI freezes
-- We need a `Quit` button in the UI! 
+BIG PROBLEM: 
+
+- When I start recording and then stop, I get `/Users/adam/Movies/DidYouGetIt_2025-05-20_01-57-12/DidYouGetIt_2025-05-20_01-57-12.mov` which is zero-length, and I don't see any JSON files in the directory.
 
 GENERALLY: Revise PROGRESS.md. Add the issues mentioned above, prioritize the issues marked with `FIXME`. 
 
 Then start implementing the issues!
+
+Perform `./run.sh debug` to build and run the app in debug mode.

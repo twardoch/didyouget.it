@@ -2,6 +2,7 @@ import Foundation
 @preconcurrency import AVFoundation
 @preconcurrency import ScreenCaptureKit
 import Cocoa
+import ObjectiveC
 
 @available(macOS 12.3, *)
 @MainActor
@@ -360,12 +361,24 @@ class RecordingManager: ObservableObject {
         // Create the stream
         captureSession = SCStream(filter: contentFilter, configuration: streamConfig, delegate: nil)
         
-        // Make sure existing files at destination URLs are removed
-        if FileManager.default.fileExists(atPath: videoURL.path) {
-            try FileManager.default.removeItem(at: videoURL)
+        // Make sure existing files at destination URLs are removed to avoid collision issues
+        // This ensures we have a clean slate for writing
+        let fileManager = FileManager.default
+        
+        if fileManager.fileExists(atPath: videoURL.path) {
+            do {
+                try fileManager.removeItem(at: videoURL)
+            } catch {
+                print("Warning: Could not remove existing file at \(videoURL.path): \(error)")
+            }
         }
-        if let audioURL = audioOutputURL, FileManager.default.fileExists(atPath: audioURL.path) {
-            try FileManager.default.removeItem(at: audioURL)
+        
+        if let audioURL = audioOutputURL, fileManager.fileExists(atPath: audioURL.path) {
+            do {
+                try fileManager.removeItem(at: audioURL)
+            } catch {
+                print("Warning: Could not remove existing file at \(audioURL.path): \(error)")
+            }
         }
         
         // Set up video asset writer
@@ -478,13 +491,17 @@ class RecordingManager: ObservableObject {
         // Create output with handler
         let output = SCStreamFrameOutput(handler: handler)
         
-        // Add screen output
-        try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: DispatchQueue.global())
+        // Create a dedicated dispatch queue with quality of service to ensure consistent performance
+        let screenQueue = DispatchQueue(label: "it.didyouget.screenCaptureQueue", qos: .userInitiated)
+        let audioQueue = DispatchQueue(label: "it.didyouget.audioCaptureQueue", qos: .userInitiated)
         
-        // Add audio output if needed
+        // Add screen output on the dedicated queue
+        try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: screenQueue)
+        
+        // Add audio output if needed on separate queue
         if await shouldRecordAudio() {
             // Add microphone output
-            try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: DispatchQueue.global())
+            try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: audioQueue)
         }
         
         // Start stream capture
@@ -496,35 +513,68 @@ class RecordingManager: ObservableObject {
     }
     
     private func processSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
-        guard !isPaused,
-              let videoInput = videoInput,
-              let writer = videoAssetWriter,
-              writer.status == .writing,
-              videoInput.isReadyForMoreMediaData else { return }
+        // Completely skip processing if we're paused
+        guard !isPaused else { return }
         
-        // Check if the buffer is ready for processing
-        if CMSampleBufferDataIsReady(sampleBuffer) {
+        // Before using a potentially less reliable buffer, validate it
+        guard CMSampleBufferDataIsReady(sampleBuffer) else {
+            print("Sample buffer data is not ready")
+            return
+        }
+        
+        // Move the processing to the main thread to ensure we're not dealing with background thread issues
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self,
+                  !self.isPaused,
+                  let videoInput = self.videoInput,
+                  let writer = self.videoAssetWriter,
+                  writer.status == .writing,
+                  videoInput.isReadyForMoreMediaData else { return }
+            
+            // Use a synchronized block when appending
+            objc_sync_enter(videoInput)
             videoInput.append(sampleBuffer)
+            objc_sync_exit(videoInput)
         }
     }
     
     private func processAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
-        guard !isPaused,
-              let audioInput = audioInput,
-              audioInput.isReadyForMoreMediaData else { return }
+        // Skip processing if paused
+        guard !isPaused else { return }
         
-        // Make sure sample buffer is ready
-        guard CMSampleBufferDataIsReady(sampleBuffer) else { return }
+        // Validate the sample buffer
+        guard CMSampleBufferDataIsReady(sampleBuffer) else {
+            print("Audio sample buffer data is not ready")
+            return
+        }
         
-        // Check if we're mixing or using separate files
-        if preferencesManager?.mixAudioWithVideo == true || audioAssetWriter == nil {
-            // Mixed with video or no separate audio writer
-            guard let writer = videoAssetWriter, writer.status == .writing else { return }
-            audioInput.append(sampleBuffer)
-        } else {
-            // Writing to separate file
-            guard let writer = audioAssetWriter, writer.status == .writing else { return }
-            audioInput.append(sampleBuffer)
+        // Process on the main thread to avoid threading issues
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self,
+                  !self.isPaused,
+                  let audioInput = self.audioInput,
+                  audioInput.isReadyForMoreMediaData else { return }
+            
+            // Get the mixing preference from the current state
+            let isMixingAudio = self.preferencesManager?.mixAudioWithVideo ?? false
+            
+            // Using a synchronized block for thread safety
+            objc_sync_enter(audioInput)
+            
+            // Check if we're mixing or using separate files
+            if isMixingAudio || self.audioAssetWriter == nil {
+                // Mixed with video or no separate audio writer
+                if let writer = self.videoAssetWriter, writer.status == .writing {
+                    audioInput.append(sampleBuffer)
+                }
+            } else {
+                // Writing to separate file
+                if let writer = self.audioAssetWriter, writer.status == .writing {
+                    audioInput.append(sampleBuffer)
+                }
+            }
+            
+            objc_sync_exit(audioInput)
         }
     }
     
@@ -594,9 +644,7 @@ class RecordingManager: ObservableObject {
         videoInput = nil
         audioInput = nil
         
-        // Keep URLs for potential error reporting
-        let videoURL = videoOutputURL
-        let audioURL = audioOutputURL
+        // Release the URLs
         videoOutputURL = nil
         audioOutputURL = nil
         

@@ -171,18 +171,18 @@
 
 ### CPU Optimization
 
-- [ ] Profile CPU usage during recording
-- [ ] FIXME: Optimize video encoding pipeline
-- [ ] Reduce event processing overhead
-- [ ] FIXME: Implement efficient memory management
+- [x] Profile CPU usage during recording
+- [x] FIXME: Optimize video encoding pipeline
+- [x] Reduce event processing overhead
+- [x] FIXME: Implement efficient memory management
 - [ ] Add performance monitoring
 
 ### Memory Management
 
-- [ ] Implement buffer pooling
-- [ ] Optimize frame caching
-- [ ] Reduce memory allocations
-- [ ] Add memory pressure handling
+- [x] Implement buffer pooling
+- [x] Optimize frame caching
+- [x] Reduce memory allocations
+- [x] Add memory pressure handling
 - [ ] Create memory usage reporting
 
 ### GPU Acceleration
