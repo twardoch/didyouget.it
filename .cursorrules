@@ -29,7 +29,7 @@ As you work:
 
 START SPECIFICATION:
 ---
-description: Apply when documenting high-level business architecture for screen recording applications with synchronized input tracking and media capture capabilities
+description: Document high-level business logic and core functionality for screen recording applications with input tracking capabilities
 globs: *.swift,*.md
 alwaysApply: false
 ---
@@ -46,52 +46,60 @@ alwaysApply: false
 - Explain your OBSERVATIONS clearly, then provide REASONING to identify the exact issue. Add console logs when needed to gather more information.
 
 
-"Did You Get It" (didyouget.it) is a macOS screen recording system with synchronized input tracking and media capture capabilities.
+Screen Recording Core System ("Did You Get It")
+Importance Score: 95
 
-Core Business Components:
+A macOS screen recording system with advanced input tracking capabilities focusing on:
 
-1. Screen Recording Engine
-- Configurable area capture with Retina resolution at 60 FPS
-- Multi-display support with selective recording zones
-- Full resolution capture with dynamic scaling
+Recording Core:
+- Full resolution (Retina) screen capture at 60 FPS
+- Configurable recording area selection
+- Optional audio device integration
+- Mouse/keyboard action tracking with detailed event discrimination
 
-2. Input Tracking System
-- Synchronized mouse tracking with movement paths
-- Click vs. hold-release detection
-- Keyboard event capture with modifier key support
-- JSON-formatted input data with timing information
+Primary Components:
 
-3. Audio Integration
-- Selectable audio device recording
-- Optional audio-video mixing capabilities
-- Synchronized audio stream management
+1. Input Tracking Engine (Score: 90)
+- Differentiated click vs. hold-release detection
+- Keyboard stroke capture with tap/hold discrimination
+- Structured JSON output format for replay analysis
+- Timestamp correlation between input events
 
-Key Business Files:
+2. Recording Management (Score: 85)
+- Screen area configuration and capture
+- Audio device selection and synchronization
+- Input tracking activation/deactivation
+- Output file management for video/audio/input data
+
+3. Device Integration (Score: 80)
+- Audio device enumeration and selection
+- Screen selection and boundary management
+- Input device monitoring and event capture
+
+Business-Critical Files:
 ```
-DidYouGet/Models/RecordingManager.swift     - Recording orchestration
-DidYouGet/Models/InputTracking/*Tracker.swift - Input capture system
-DidYouGet/Utilities/AudioManager.swift      - Audio processing
+DidYouGet/Models/InputTracking/KeyboardTracker.swift
+DidYouGet/Models/InputTracking/MouseTracker.swift
+DidYouGet/Utilities/AudioManager.swift
 ```
 
-Business Workflows:
+Key Business Workflows:
+1. Screen Recording Pipeline
+- Area selection
+- Device initialization
+- Capture stream management
+- File output coordination
 
-1. Recording Session:
-- Area selection and validation
-- Input device configuration
-- Stream initialization and synchronization
-- Multi-format data capture
+2. Input Tracking Pipeline
+- Event discrimination
+- State tracking
+- JSON formatting
+- Synchronized storage
 
-2. Data Management:
-- Synchronized timestamp management
-- Input event categorization
-- Media stream coordination
-- Format-specific output generation
-
-Importance Scores:
-- Recording Engine: 95 (core business functionality)
-- Input Tracking: 90 (unique interaction capture)
-- Audio Integration: 85 (critical media component)
-- Session Management: 80 (workflow orchestration)
+3. Audio Integration Pipeline
+- Device selection
+- Stream synchronization
+- Mixed output generation
 
 $END$
 END SPECIFICATION

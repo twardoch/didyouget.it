@@ -1,47 +1,36 @@
 ---
-description: Defines rules and patterns for file indexing and processing within the screen recording application
-globs: .cursorignore,.cursorindexingignore,**/*.swift,**/*.json
+description: Rules for file indexing and inclusion/exclusion processing in the application
+globs: .cursorignore,.cursorindexingignore,Makefile,**/build/**,**/dist/**
 alwaysApply: false
 ---
 
 
 # indexing-flow
 
-The indexing system follows these core business rules:
+The indexing system processes files according to a hierarchical set of rules and patterns:
 
-## Exclusion Patterns
-- `.cursorignore` defines global exclusion patterns 
-- `.cursorindexingignore` specifies additional indexing-specific exclusions
-- Build artifacts and temporary recording files are excluded from indexing
+## File Selection Logic (70)
+Main indexing configuration is split across two files:
+- `.cursorignore` - Global exclusion patterns
+- `.cursorindexingignore` - Project-specific indexing rules
 
-## File Processing Flow
-1. Screen Recording Assets:
-   - Video frames are processed in real-time at 60 FPS
-   - Retina resolution captures are indexed separately from standard resolution
-   - Audio streams are indexed with timestamp correlation to video frames
+Files are processed in the following order:
+1. Apply global ignore patterns
+2. Check project-specific ignore rules
+3. Process remaining files through the build system
 
-2. Input Tracking Data:
-   - Mouse events are indexed in JSON format with categorized interactions
-   - Keyboard events are indexed with privacy filtering for sensitive input
-   - Input timing data is synchronized with video frame indexes
+## Build Integration (65)
+The Makefile coordinates indexing integration with the build process:
+1. Pre-build indexing scan
+2. Build artifact tracking
+3. Post-build index updates for generated files
 
-3. Session Management:
-   - Recording sessions create uniquely indexed containers
-   - Multiple streams (video, audio, input) are cross-referenced by timestamps
-   - Paused sessions maintain index continuity
+## Reference Resolution (60)
+Reference handling follows a specific path:
+1. Local file references within the project structure
+2. External package references (via Package.swift)
+3. System framework linkages
 
-Relevant Files:
-```
-.cursorignore
-.cursorindexingignore
-DidYouGet/DidYouGet/Models/RecordingManager.swift
-DidYouGet/DidYouGet/Models/InputTracking/KeyboardTracker.swift
-DidYouGet/DidYouGet/Models/InputTracking/MouseTracker.swift
-```
-
-Importance Scores:
-- Recording Asset Indexing: 95 (Core business function)
-- Input Data Indexing: 85 (Critical tracking system)
-- Session Management: 80 (Key organizational component)
+The system maintains separation between source indexing and build artifact indexing to prevent contamination between the two contexts.
 
 $END$

@@ -1,50 +1,47 @@
 ---
-description: Defines rules and patterns for file indexing and content organization in the screen recording application
-globs: .cursorignore,.cursorindexingignore,**/*.swift,**/*.md
+description: Defines rules and patterns for indexing screen recording and input tracking data
+globs: .cursorignore,.cursorindexingignore,DidYouGet/DidYouGet/Models/**/*
 alwaysApply: false
 ---
 
 
 # indexing-rules-model
 
-The indexing rules model specifies file organization patterns relevant to the screen recording functionality:
+The project implements indexing rules specific to tracking and organizing screen recordings and input data through several key components:
 
-Recording Data Organization:
-- Screen capture streams indexed by display identifier
-- Input tracking files organized by session timestamps
-- Audio capture streams cataloged by device ID
+File Exclusion Rules (.cursorignore, .cursorindexingignore):
+- Define patterns for excluding sensitive screen areas from recording
+- Specify input types that should not be tracked (e.g., password fields)
+- Importance Score: 85
 
-File Structure Rules:
-Separate indexing for:
-- Video recording segments
-- Mouse/keyboard event logs in JSON format
-- Audio stream components
-- Mixed media output files
+Input Event Indexing Structure:
+- Keyboard events indexed by:
+  - Event type (tap, hold, release)
+  - Timestamp (ms precision)
+  - Key combination state
+  - Modifier flags
 
-Format Rules:
-1. Screen Recording Index
-- Resolution and FPS metadata
-- Display identifier mapping
-- Capture area coordinates
+- Mouse events indexed by:
+  - Movement coordinates
+  - Event type (click, drag, release)
+  - Button state
+  - Duration for hold events
+Importance Score: 90
 
-2. Input Tracking Index
-- Mouse event categorization (click/hold/drag)
-- Keyboard event classification (tap/hold)
-- Timestamp-based correlation
+Recording Session Organization:
+- Hierarchical index structure:
+  - Session root
+  - Screen capture segments
+  - Audio track references
+  - Input event timelines
+Importance Score: 75
 
-3. Audio Stream Index
-- Device mapping
-- Stream synchronization markers
-- Mixed vs. separate output flags
-
-Importance Scores:
-- Recording Data Organization: 85 (Key integration structure)
-- Format Rules: 75 (Critical for data correlation)
-- File Structure Rules: 65 (Supporting organization)
-
-File Paths:
-/.cursorignore
-/.cursorindexingignore
-/DidYouGet/Models/RecordingManager.swift
+Relevant Files:
+```
+.cursorignore
+.cursorindexingignore
+DidYouGet/DidYouGet/Models/InputTracking/KeyboardTracker.swift
+DidYouGet/DidYouGet/Models/InputTracking/MouseTracker.swift
+```
 
 $END$
