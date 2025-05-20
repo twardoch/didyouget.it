@@ -2,6 +2,7 @@
 - After clicking Record, the timer does not start running
 - Stop button does not change back to Record button after I click Stop
 - The app creates empty folders, no files inside
+- Previously the app did create the keystrokes JSON and the mouse JSON, but it always created a zero-length MOV file, never a proper video file.
 
 ```
 Building Did You Get It app in debug mode...
