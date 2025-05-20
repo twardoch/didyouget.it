@@ -42,27 +42,34 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
         let scConfig = SCStreamConfiguration()
         self.streamConfig = scConfig // Store for later use
         
-        scConfig.queueDepth = 5 // Increase queue depth for smoother capture
+        // scConfig.queueDepth = 5 // Increase queue depth for smoother capture - Using dummy_config value
+        scConfig.queueDepth = 1 // Match dummy config
         
-        // Set initial dimensions to HD as default
-        scConfig.width = 1920
-        scConfig.height = 1080
+        // Set initial dimensions to HD as default - Will be overridden by display case
+        // scConfig.width = 1920
+        // scConfig.height = 1080
         
-        // Set frame rate based on preferences
-        print("Setting frame rate to \(frameRate) FPS")
-        scConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(frameRate))
+        // Set frame rate based on preferences - Using dummy_config value
+        // print("Setting frame rate to \(frameRate) FPS")
+        // scConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(frameRate))
+        scConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(5)) // Match dummy config (5 FPS)
+        print("TEST: Setting frame rate to 5 FPS")
+
+        // Configure pixel format (BGRA is standard for macOS screen capture) - Using dummy_config default
+        // scConfig.pixelFormat = kCVPixelFormatType_32BGRA
+        print("TEST: Using default pixel format")
+
+        // scConfig.scalesToFit = true // - Using dummy_config default
+        print("TEST: Using default scalesToFit")
         
-        // Configure pixel format (BGRA is standard for macOS screen capture)
-        scConfig.pixelFormat = kCVPixelFormatType_32BGRA
-        scConfig.scalesToFit = true
-        
-        // Set aspect ratio preservation if available
-        if #available(macOS 14.0, *) {
-            scConfig.preservesAspectRatio = true
-            print("Aspect ratio preservation enabled (macOS 14+)")
-        } else {
-            print("Aspect ratio preservation not available (requires macOS 14+)")
-        }
+        // Set aspect ratio preservation if available - Using dummy_config default
+        // if #available(macOS 14.0, *) {
+        //     scConfig.preservesAspectRatio = true
+        //     print("Aspect ratio preservation enabled (macOS 14+)")
+        // } else {
+        //     print("Aspect ratio preservation not available (requires macOS 14+)")
+        // }
+        print("TEST: Using default preservesAspectRatio")
         
         // Configure audio capture if needed
         if recordAudio {
@@ -83,14 +90,10 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
                 throw NSError(domain: "CaptureSessionManager", code: 1002, userInfo: [NSLocalizedDescriptionKey: "No display selected"])
             }
             
-            // Update configuration for display resolution with Retina support
-            let screenWidth = Int(display.frame.width)
-            let screenHeight = Int(display.frame.height)
-            let scale = 2 // Retina scale factor
-            
-            scConfig.width = screenWidth * scale
-            scConfig.height = screenHeight * scale
-            print("Capturing display \(display.displayID) at \(screenWidth * scale) x \(screenHeight * scale) (with Retina scaling)")
+            // FORCED TEST RESOLUTION - MATCHING DUMMY CAPTURE
+            scConfig.width = 320 // Match dummy config
+            scConfig.height = 240 // Match dummy config
+            print("TEST: Capturing display \(display.displayID) at FORCED 320x240, 5FPS, QD=1, default fmt/scale/aspect")
             
         case .window:
             guard let window = selectedWindow else {
@@ -175,7 +178,7 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
         // and that internal handleStreamOutput will then call the stored sampleBufferHandler.
 
         print("Creating SCStream with configured filter and settings")
-        captureSession = SCStream(filter: filter, configuration: config, delegate: self)
+        captureSession = SCStream(filter: filter, configuration: config, delegate: self) // Reverted delegate to self
         
         guard let stream = captureSession else {
             throw NSError(domain: "CaptureSessionManager", code: 2001, userInfo: [NSLocalizedDescriptionKey: "Failed to create SCStream session"])
@@ -269,9 +272,11 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
         
         // Create a minimal configuration
         let dummyConfig = SCStreamConfiguration()
-        dummyConfig.width = 320
-        dummyConfig.height = 240
-        dummyConfig.minimumFrameInterval = CMTime(value: 1, timescale: 5)
+        dummyConfig.width = Int(firstDisplay.frame.width) * 2
+        dummyConfig.height = Int(firstDisplay.frame.height) * 2
+        print("DEBUG_DUMMY: Using dummyConfig resolution \(dummyConfig.width)x\(dummyConfig.height)")
+
+        dummyConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(5))
         dummyConfig.queueDepth = 1
         
         // Use a class for the capture handler

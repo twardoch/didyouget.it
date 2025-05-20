@@ -4195,13 +4195,1687 @@ Let's run `./run.sh`.
 ```
 
 ```
-adam@Hamlet didyouget.it % ./run.sh
 Building Did You Get It app in debug mode...
 Building for debugging...
-[2/6] Write swift-version--58304C5D6DBC2206.txt
+error: emit-module command failed with exit code 1 (use -v to see invocation)
+/Users/adam/Developer/vcs/github.twardoch/pub/didyouget.it/DidYouGet/DidYouGet/M
+odels/Recording/CaptureSessionManager.swift:28:5: error: overriding declaration
+requires an 'override' keyword
+ 26 |     private var sampleBufferHandler: ((CMSampleBuffer, RecordingManager.SC
+StreamType) -> Void)?
+ 27 |     
+ 28 |     init() {
+    |     `- error: overriding declaration requires an 'override' keyword
+ 29 |         print("CaptureSessionManager initialized")
+ 30 |     }
+
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/S
+DKs/MacOSX15.4.sdk/usr/include/objc/NSObject.h:66:1: note: overridden declaratio
+n is here
+ 64 | 
+ 65 | + (void)initialize;
+ 66 | - (instancetype)init
+    | `- note: overridden declaration is here
+ 67 | #if NS_ENFORCE_NSOBJECT_DESIGNATED_INITIALIZER
+ 68 |     NS_DESIGNATED_INITIALIZER
+/Users/adam/Developer/vcs/github.twardoch/pub/didyouget.it/DidYouGet/DidYouGet/M
+odels/Recording/CaptureSessionManager.swift:28:5: error: overriding declaration
+requires an 'override' keyword
+ 26 |     private var sampleBufferHandler: ((CMSampleBuffer, RecordingManager.SC
+StreamType) -> Void)?
+ 27 |     
+ 28 |     init() {
+    |     `- error: overriding declaration requires an 'override' keyword
+ 29 |         print("CaptureSessionManager initialized")
+ 30 |     }
+
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/S
+DKs/MacOSX15.4.sdk/usr/include/objc/NSObject.h:66:1: note: overridden declaratio
+n is here
+ 64 | 
+ 65 | + (void)initialize;
+ 66 | - (instancetype)init
+    | `- note: overridden declaration is here
+ 67 | #if NS_ENFORCE_NSOBJECT_DESIGNATED_INITIALIZER
+ 68 |     NS_DESIGNATED_INITIALIZER
+[4/6] Compiling DidYouGet CaptureSessionManager.swift
+
 ```
 
 ---
+
+The build failed again, this time with a new error in `CaptureSessionManager.swift`:
+```
+error: overriding declaration requires an 'override' keyword
+init() {
+^
+note: overridden declaration is here
+- (instancetype)init // From NSObject.h
+```
+This is because `CaptureSessionManager` now inherits from `NSObject` (due to `class CaptureSessionManager: NSObject, SCStreamDelegate`), and `NSObject` has its own `init()`. So, our `init()` in `CaptureSessionManager` needs the `override` keyword.
+
+**Plan:**
+1.  In `CaptureSessionManager.swift`, change `init() {` to `override init() {`.
+2.  Run `./run.sh` again.
+
+---
+
+```diff
+      private var sampleBufferHandler: ((CMSampleBuffer, RecordingManager.SCStreamType) -> Void)?
+      
+-     init() {
++     override init() {
+          print("CaptureSessionManager initialized")
++         super.init()
+      }
+      
+```
+
+---
+
+The `override` keyword has been added to `init()` in `CaptureSessionManager.swift`, and `super.init()` is now called. This should resolve the build error.
+
+Let's run the script again.
+
+---
+
+```bash
+./run.sh
+```
+
+```
+Building Did You Get It app in debug mode...
+Building for debugging...
+[10/10] Applying DidYouGet
+Build complete! (4.75s)
+Build successful!
+Running application from: /Users/adam/Developer/vcs/github.twardoch/pub/didyouge
+t.it/.build/x86_64-apple-macosx/debug/DidYouGet
+=== APPLICATION INITIALIZATION ===
+Application starting up. macOS Version: Version 15.5 (Build 24F74)
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+No persisted recording was active
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+No persisted recording was active
+WARNING: PreferencesManager not connected to RecordingManager during app init
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+No persisted recording was active
+ContentView appeared - ensuring PreferencesManager is connected
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+ContentView onAppear - checking recording state
+Not currently recording, safe to reset state
+Resetting recording state
+Clearing persisted recording state
+Recording state reset complete
+Record button clicked - first ensuring PreferencesManager is connected
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+PreferencesManager confirmed connected, starting recording
+Resetting recording state
+Clearing persisted recording state
+Recording state reset complete
+
+=== STARTING RECORDING ===
+
+Recording source: Display with ID 69734662
+Recording options: Audio=false, Mouse=true, Keyboard=true
+Base output directory: /Users/adam/Movies
+Created/verified recording directory: /Users/adam/Movies/DidYouGetIt_2025-05-21_
+01-45-01
+✓ Successfully tested write permissions in directory
+Created recording session marker file with session info
+Created placeholder for video file at: /Users/adam/Movies/DidYouGetIt_2025-05-21
+_01-45-01/DidYouGetIt_2025-05-21_01-45-01.mov
+Created placeholder for mouse tracking file at: /Users/adam/Movies/DidYouGetIt_2
+025-05-21_01-45-01/DidYouGetIt_2025-05-21_01-45-01_mouse.json
+Created placeholder for keyboard tracking file at: /Users/adam/Movies/DidYouGetI
+t_2025-05-21_01-45-01/DidYouGetIt_2025-05-21_01-45-01_keyboard.json
+Mouse tracking path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-45-01/DidYouGe
+tIt_2025-05-21_01-45-01_mouse.json
+Keyboard tracking path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-45-01/DidYo
+uGetIt_2025-05-21_01-45-01_keyboard.json
+Video output path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-45-01/DidYouGetI
+t_2025-05-21_01-45-01.mov
+No separate audio file will be created (mixed with video or audio disabled)
+Saved video output URL to UserDefaults: file:///Users/adam/Movies/DidYouGetIt_20
+25-05-21_01-45-01/DidYouGetIt_2025-05-21_01-45-01.mov
+Configuring stream settings...
+Setting frame rate to 60 FPS
+Aspect ratio preservation enabled (macOS 14+)
+Setting up content filter based on capture type: display
+Capturing display 69734662 at 3072 x 1920 (with Retina scaling)
+VIDEO CONFIG: Width=3072, Height=1920, Quality=High, FrameRate=60
+Adding dummy capture callback for initialization
+Initializing capture system with warmup frame...
+✓ Received dummy initialization frame
+Dummy capture completed successfully
+Creating video asset writer with output URL: /Users/adam/Movies/DidYouGetIt_2025
+-05-21_01-45-01/DidYouGetIt_2025-05-21_01-45-01.mov
+Removed existing video file at /Users/adam/Movies/DidYouGetIt_2025-05-21_01-45-0
+1/DidYouGetIt_2025-05-21_01-45-01.mov
+✓ Successfully created empty placeholder file at /Users/adam/Movies/DidYouGetIt_
+2025-05-21_01-45-01/DidYouGetIt_2025-05-21_01-45-01.mov
+✓ Video asset writer created successfully, initial status: 0
+WARNING: AVAssetWriter did not immediately create file on disk
+Configuring video input settings
+Using video quality: High with bitrate: 20 Mbps
+VIDEO CONFIG: Width=3072, Height=1920, BitRate=20Mbps, FrameRate=60
+DEBUG_VP: Attempting to create AVAssetWriterInput...
+DEBUG_VP: AVAssetWriterInput creation attempted (videoInput is not nil).
+DEBUG_VP: Checking if writer can add videoInput...
+DEBUG_VP: Writer can add videoInput. Attempting to add...
+DEBUG_VP: writer.add(videoInput) executed.
+DEBUG_VP: Attempting to return from setupVideoWriter...
+DEBUG: Returned from videoProcessor.setupVideoWriter successfully.
+DEBUG: Checking audio preferences...
+DEBUG: Audio recording is DISABLED in preferences.
+DEBUG: Finished checking audio preferences.
+Attempting to start video writer...
+Starting video asset writer...
+VideoWriter.startWriting() returned true
+✓ Video writer started successfully, status: 1
+✓ Video writer started.
+Attempting to create SCStream...
+Creating SCStream with configured filter and settings
+SCStreamFrameOutput initialized - ready to receive frames
+Screen capture output added successfully (using custom SCStreamFrameOutput)
+✓ SCStream created.
+Attempting to start video/audio processor sessions...
+Starting video writer session at time: 0.0...
+✓ Video writer session started successfully
+✓ Video file already exists at path
+✓ Video/audio processor sessions started.
+Attempting to run timer setup on MainActor...
+Inside MainActor.run for timer setup.
+Saved recording start time to UserDefaults: 2025-05-20 23:45:02 +0000
+Starting recording timer at: 2025-05-20 23:45:02 +0000
+Setting immediate startTime to 2025-05-20 23:45:02 +0000
+Setting initial recordingDuration to 0
+Creating timer with captured startTime 2025-05-20 23:45:02 +0000
+✓ Dispatch timer created and activated
+✓ Timer successfully initialized and started
+✓ Timer setup block completed.
+Attempting to start capture session (captureSessionManager.startCapture())...
+Starting SCStream capture...
+Forcing UI refresh for timer
+TIMER UPDATE: Recording duration = 0.021686077117919922 seconds
+Saved duration 0.021686077117919922 to UserDefaults
+TIMER UPDATE: Recording duration = 0.10489606857299805 seconds
+Saved duration 0.10489606857299805 to UserDefaults
+SCStream capture started successfully
+✓ Capture session started.
+Attempting to start input tracking...
+Accessibility permission status: Granted
+Mouse tracking enabled, URL: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-45-01/
+DidYouGetIt_2025-05-21_01-45-01_mouse.json
+Starting mouse tracking
+Keyboard tracking enabled, URL: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-45-
+01/DidYouGetIt_2025-05-21_01-45-01_keyboard.json
+Starting keyboard tracking
+✓ Input tracking started or skipped.
+Recording started successfully
+TIMER UPDATE: Recording duration = 0.2604900598526001 seconds
+Saved duration 0.2604900598526001 to UserDefaults
+TIMER UPDATE: Recording duration = 0.3022040128707886 seconds
+Saved duration 0.3022040128707886 to UserDefaults
+TIMER UPDATE: Recording duration = 0.4022930860519409 seconds
+Saved duration 0.4022930860519409 to UserDefaults
+TIMER UPDATE: Recording duration = 0.5023430585861206 seconds
+Saved duration 0.5023430585861206 to UserDefaults
+TIMER UPDATE: Recording duration = 0.6036580801010132 seconds
+Saved duration 0.6036580801010132 to UserDefaults
+TIMER UPDATE: Recording duration = 0.7023030519485474 seconds
+Saved duration 0.7023030519485474 to UserDefaults
+TIMER UPDATE: Recording duration = 0.8022490739822388 seconds
+Saved duration 0.8022490739822388 to UserDefaults
+TIMER UPDATE: Recording duration = 0.9022970199584961 seconds
+Saved duration 0.9022970199584961 to UserDefaults
+TIMER UPDATE: Recording duration = 2.002389073371887 seconds
+TIMER UPDATE: Recording duration = 2.1023271083831787 seconds
+TIMER UPDATE: Recording duration = 2.2023640871047974 seconds
+TIMER UPDATE: Recording duration = 2.302341103553772 seconds
+TIMER UPDATE: Recording duration = 2.4023690223693848 seconds
+TIMER UPDATE: Recording duration = 2.5022950172424316 seconds
+TIMER UPDATE: Recording duration = 2.602353096008301 seconds
+TIMER UPDATE: Recording duration = 2.7023030519485474 seconds
+TIMER UPDATE: Recording duration = 2.802367091178894 seconds
+TIMER UPDATE: Recording duration = 2.902345061302185 seconds
+TIMER UPDATE: Recording duration = 4.002355098724365 seconds
+TIMER UPDATE: Recording duration = 4.1023300886154175 seconds
+TIMER UPDATE: Recording duration = 4.202301025390625 seconds
+TIMER UPDATE: Recording duration = 4.3022990226745605 seconds
+TIMER UPDATE: Recording duration = 4.402400016784668 seconds
+TIMER UPDATE: Recording duration = 4.502342104911804 seconds
+TIMER UPDATE: Recording duration = 4.60234808921814 seconds
+TIMER UPDATE: Recording duration = 4.702351093292236 seconds
+TIMER UPDATE: Recording duration = 4.8023810386657715 seconds
+TIMER UPDATE: Recording duration = 4.902366042137146 seconds
+Saved duration 5.002340078353882 to UserDefaults
+Saved duration 5.105232000350952 to UserDefaults
+Saved duration 5.2024030685424805 to UserDefaults
+Saved duration 5.3023940324783325 to UserDefaults
+Saved duration 5.402392029762268 to UserDefaults
+Saved duration 5.50238299369812 to UserDefaults
+Saved duration 5.602419018745422 to UserDefaults
+Saved duration 5.702457070350647 to UserDefaults
+Saved duration 5.802866101264954 to UserDefaults
+Saved duration 5.902999997138977 to UserDefaults
+TIMER UPDATE: Recording duration = 6.002371072769165 seconds
+TIMER UPDATE: Recording duration = 6.102428078651428 seconds
+TIMER UPDATE: Recording duration = 6.202386021614075 seconds
+TIMER UPDATE: Recording duration = 6.302362084388733 seconds
+TIMER UPDATE: Recording duration = 6.402465105056763 seconds
+TIMER UPDATE: Recording duration = 6.502362012863159 seconds
+TIMER UPDATE: Recording duration = 6.602407097816467 seconds
+TIMER UPDATE: Recording duration = 6.7024019956588745 seconds
+TIMER UPDATE: Recording duration = 6.802380084991455 seconds
+TIMER UPDATE: Recording duration = 6.902321100234985 seconds
+TIMER UPDATE: Recording duration = 8.002387046813965 seconds
+TIMER UPDATE: Recording duration = 8.102395057678223 seconds
+TIMER UPDATE: Recording duration = 8.202385067939758 seconds
+TIMER UPDATE: Recording duration = 8.302353024482727 seconds
+TIMER UPDATE: Recording duration = 8.40235710144043 seconds
+TIMER UPDATE: Recording duration = 8.502361059188843 seconds
+TIMER UPDATE: Recording duration = 8.602378010749817 seconds
+TIMER UPDATE: Recording duration = 8.702364087104797 seconds
+TIMER UPDATE: Recording duration = 8.802441000938416 seconds
+TIMER UPDATE: Recording duration = 8.902415037155151 seconds
+ContentView onAppear - checking recording state
+Recording is active, preserving state
+TIMER UPDATE: Recording duration = 10.002443075180054 seconds
+Saved duration 10.002443075180054 to UserDefaults
+TIMER UPDATE: Recording duration = 10.102415084838867 seconds
+Saved duration 10.102415084838867 to UserDefaults
+TIMER UPDATE: Recording duration = 10.20240306854248 seconds
+Saved duration 10.20240306854248 to UserDefaults
+TIMER UPDATE: Recording duration = 10.302412033081055 seconds
+Saved duration 10.302412033081055 to UserDefaults
+TIMER UPDATE: Recording duration = 10.402451992034912 seconds
+Saved duration 10.402451992034912 to UserDefaults
+TIMER UPDATE: Recording duration = 10.502457022666931 seconds
+Saved duration 10.502457022666931 to UserDefaults
+TIMER UPDATE: Recording duration = 10.602479100227356 seconds
+Saved duration 10.602479100227356 to UserDefaults
+TIMER UPDATE: Recording duration = 10.702476024627686 seconds
+Saved duration 10.702476024627686 to UserDefaults
+TIMER UPDATE: Recording duration = 10.802491068840027 seconds
+Saved duration 10.802491068840027 to UserDefaults
+TIMER UPDATE: Recording duration = 10.902492046356201 seconds
+Saved duration 10.902492046356201 to UserDefaults
+Stop button clicked - requesting stop via RecordingManager
+Stop recording requested via stopRecording()
+
+=== STOPPING RECORDING (INTERNAL) ===
+
+Setting isRecording = false
+Cancelling dispatch timer
+Explicitly setting recordingDuration to 0 for UI update.
+Stopping input tracking
+Mouse tracking data saved to: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-45-01
+/DidYouGetIt_2025-05-21_01-45-01_mouse.json
+Keyboard tracking data saved to: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-45
+-01/DidYouGetIt_2025-05-21_01-45-01_keyboard.json
+Stopping capture session
+Stopping SCStream capture...
+Stream capture stopped successfully
+Waiting for buffers to flush (0.5s delay)...
+Finalizing recording files
+Finalizing video file...
+PRE-FINALIZE VIDEO FILE SIZE: 0 bytes
+CRITICAL WARNING: Video file is empty (0 bytes) before finalization!
+WRITER STATE DUMP:
+  - Status: 1
+  - Error: nil
+  - Video frames processed: 0
+Marking video input as finished
+Video successfully finalized
+POST-FINALIZE VIDEO FILE SIZE: 0 bytes
+Removed zero-length video file at /Users/adam/Movies/DidYouGetIt_2025-05-21_01-4
+5-01/DidYouGetIt_2025-05-21_01-45-01.mov
+INFO: No separate audio writer to finalize
+
+=== RECORDING DIAGNOSTICS ===
+
+Video frames processed: 0
+Audio samples processed: 0
+Checking Video file: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-45-01/DidYouGe
+tIt_2025-05-21_01-45-01.mov
+ERROR: Video file not found at expected location: /Users/adam/Movies/DidYouGetIt
+_2025-05-21_01-45-01/DidYouGetIt_2025-05-21_01-45-01.mov
+Checking Mouse tracking file: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-45-01
+/DidYouGetIt_2025-05-21_01-45-01_mouse.json
+Mouse tracking file size: 29138 bytes
+✓ Mouse tracking file successfully saved with size: 29138 bytes
+Mouse tracking file created at: 2025-05-20 23:45:02 +0000
+Checking Keyboard tracking file: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-45
+-01/DidYouGetIt_2025-05-21_01-45-01_keyboard.json
+Keyboard tracking file size: 899 bytes
+✓ Keyboard tracking file successfully saved with size: 899 bytes
+Keyboard tracking file created at: 2025-05-20 23:45:02 +0000
+Recording stopped successfully (Internal)
+stopRecordingAsyncInternal completed successfully.
+Proceeding to forceFullReset() after stop attempt.
+EMERGENCY: Forcing immediate reset of all recording state
+Emergency reset complete - all state variables cleared
+stopRecording() finished. UI should reflect stopped state.
+
+```
+
+---
+
+This is a major breakthrough! The application ran, the timer ticked, and input tracking files were generated with data!
+
+**Key Positive Changes in this Log:**
+
+1.  **Full Recording Initialization:** All the `DEBUG_...` print statements in `RecordingManager.startRecordingAsync` and `VideoProcessor.setupVideoWriter` appeared, right up to `"Recording started successfully"`. This means the setup phase is no longer crashing or halting.
+2.  **Timer Works:** `"TIMER UPDATE: Recording duration = ..."` messages are present and updating.
+3.  **Input Tracking Works (with permissions):**
+    *   `Accessibility permission status: Granted` (This is new! The user must have granted it.)
+    *   `Starting mouse tracking`
+    *   `Starting keyboard tracking`
+    *   Upon stop:
+        *   `Mouse tracking data saved to: ...`
+        *   `Keyboard tracking data saved to: ...`
+        *   `Mouse tracking file size: 29138 bytes`
+        *   `Keyboard tracking file size: 899 bytes`
+    *   This is excellent! The JSON files now have data.
+
+**Remaining Critical Issue: Video File is Still Empty**
+
+*   The log clearly shows:
+    *   `PRE-FINALIZE VIDEO FILE SIZE: 0 bytes`
+    *   `CRITICAL WARNING: Video file is empty (0 bytes) before finalization!`
+    *   `WRITER STATE DUMP: ... Video frames processed: 0`
+    *   `POST-FINALIZE VIDEO FILE SIZE: 0 bytes`
+    *   `Removed zero-length video file at ...`
+*   This means that `VideoProcessor.processSampleBuffer` is still not successfully processing any frames, or `RecordingManager.handleSampleBuffer` is not receiving them for screen type.
+
+**Checking the Frame Delivery Path:**
+
+*   **`RecordingManager.handleSampleBuffer` print:**
+    *   The log for `RecordingManager.handleSampleBuffer` (`DEBUG_RM: handleSampleBuffer called with type: ...`) is MISSING from this output. This is the crucial piece of information we need now.
+    *   This means that even though `CaptureSessionManager.createStream` sets up `SCStreamFrameOutput`, and that `SCStreamFrameOutput` *should* call the handler that eventually calls `RecordingManager.handleSampleBuffer`, this final step isn't happening for screen frames.
+
+*   **`CaptureSessionManager`'s `SCStreamFrameOutput` handler:**
+    *   The debug logs for `CaptureSessionManager` that were added:
+        *   `DEBUG_CSM: Bridge handler in createStream called by SCStreamFrameOutput. Type: ...` (This is the handler passed *to* `SCStreamFrameOutput`'s init)
+        *   `DEBUG_CSM: handleStreamOutput forwarding to RecordingManager. Type: ...` (This is from the internal `handleStreamOutput` method)
+    *   These `DEBUG_CSM` messages are ALSO MISSING from the log.
+
+*   **`SCStreamFrameOutput.stream(_:didOutputSampleBuffer:ofType:)` prints:**
+    *   Inside the custom `SCStreamFrameOutput.swift` file, there are prints like:
+        *   `SCStream output: Received FIRST screen frame! PTS=...`
+        *   `SCStream output: Received screen frame #..., PTS=...`
+    *   These are ALSO MISSING from the current log for `.screen` type.
+
+**Conclusion on Video Frame Issue:**
+ScreenCaptureKit's `SCStream` is *still not delivering any screen frames* to our `SCStreamFrameOutput` instance's `stream(_:didOutputSampleBuffer:ofType:)` method.
+The setup *seems* correct up to `SCStream.startCapture()`, which reports success. However, no frames are subsequently delivered.
+
+Possible reasons why `SCStream` isn't delivering frames despite `startCapture()` succeeding:
+1.  **Content Filter Issues:** Although `SCContentFilter(display: display, excludingWindows: [])` seems straightforward for full display capture, there might be an edge case or a subtle issue with how the selected `SCDisplay` is interacting with the filter.
+2.  **SCStream Bug/Limitation:** A less likely scenario, but possible.
+3.  **Timing/RunLoop Issue for SCStream:** Perhaps the `SCStream` needs a particular run loop mode or environment that isn't correctly established for its internal operations to start pumping frames. The `sampleHandlerQueue` on `addStreamOutput` (which is `deliveryQueue`) should handle callbacks, but the stream's own lifecycle might be stalled.
+4.  **No actual screen updates:** If the screen being captured is completely static (no mouse moves, no window changes, no animations), `SCStream` might optimize by not sending redundant frames. However, during testing, one would typically move the mouse or have some activity. The timer runs for over 20 seconds, so some frames should have been generated.
+
+The `addDummyCapture()` function in `CaptureSessionManager` *does* log `"✓ Received dummy initialization frame"`, which means a temporary `SCStream` *can* deliver a frame in that context. This makes the current failure more puzzling. The main difference is the filter and configuration.
+
+Let's re-examine `CaptureSessionManager.createStream` and `addStreamOutput`.
+```swift
+// CaptureSessionManager.swift
+// ...
+        let deliveryQueue = DispatchQueue(label: "com.didyougetit.scstream.deliveryqueue", qos: .userInitiated)
+        try stream.addStreamOutput(customFrameOutput, type: .screen, sampleHandlerQueue: deliveryQueue)
+// ...
+```
+This looks correct. `customFrameOutput` is an instance of our `SCStreamFrameOutput` class which implements `SCStreamOutput`. The `deliveryQueue` is where `customFrameOutput.stream(_:didOutputSampleBuffer:ofType:)` should be called.
+
+**What if the `SCStreamDelegate` methods in `CaptureSessionManager` are telling us something?**
+```swift
+// CaptureSessionManager.swift
+extension CaptureSessionManager: SCStreamDelegate {
+    func stream(_ stream: SCStream, didStopWithError error: Error) {
+        print("ERROR: SCStream did stop with error: \(error.localizedDescription)")
+        // ...
+    }
+}
+```
+This error message is not in the log, so the stream isn't reporting an explicit stop-with-error.
+
+Could the `filter` or `config` passed to `SCStream(filter: filter, configuration: config, delegate: self)` be subtly wrong for the main recording, even though they seem okay from the logs?
+-   `config.width` and `config.height` are set to Retina scale (e.g., 3072x1920). This is correct.
+-   `config.pixelFormat = kCVPixelFormatType_32BGRA` (standard).
+-   `config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(frameRate))` (correct for 60fps).
+-   `filter` is `SCContentFilter(display: display, excludingWindows: [])`.
+
+One more place to add a print: inside the `SCStreamDelegate` method `stream(_:didOutputSampleBuffer:ofType:)` within our custom `SCStreamFrameOutput` class, right at the beginning, before any `switch type`. This is the absolute first point our code would be hit by ScreenCaptureKit with a frame. It already has prints like `"SCStream output: Received FIRST screen frame!"` but let's add a more generic one.
+
+The existing prints like "SCStream output: Received screen frame #..." *should* have appeared if frames were delivered. Their absence is the strongest indicator.
+
+**Next Steps:**
+
+1.  **Confirm Accessibility for future tests:** Since input tracking now works when permissions are granted, this is good.
+2.  **Focus on SCStream frame delivery:**
+    *   In `SCStreamFrameOutput.swift`, inside `stream(_:didOutputSampleBuffer:ofType:)`, add a very prominent print at the absolute beginning, e.g., `print("<<<< FRAME RECEIVED BY SCStreamFrameOutput (custom class) - Type: \(type) >>>>")`.
+    *   If this doesn't show up, the issue is almost certainly that `SCStream` is not sending any data for the `.screen` type, despite `startCapture()` not erroring.
+    *   Consider simplifying the `SCContentFilter` even further if possible, or try capturing a different display if multiple are available, just to see if it's display-specific.
+    *   Review Apple's documentation or examples for `SCStream` to see if there's a common pitfall for no frames being delivered after a successful start.
+
+3.  **Update `TODO.md`**: Reflect that input tracking is permission-dependent and video frames are the primary remaining issue.
+
+Let's add that print to `SCStreamFrameOutput.swift`.
+
+---
+
+```diff
+      
+      func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
++         print("<<<< FRAME RECEIVED BY SCStreamFrameOutput (custom class) - Type: \(type) >>>>")
+          // Perform basic buffer validation before proceeding
+          guard CMSampleBufferIsValid(sampleBuffer) else {
+```
+
+---
+
+The prominent print statement has been added to `SCStreamFrameOutput.swift`.
+
+Now, update `TODO.md`.
+
+---
+
+```diff
+  CURRENT ISSUES (as of YYYY-MM-DD HH:MM):
+  
+- **Primary Issue: No video frames are being processed.**
++ **Primary Issue: No video frames are being delivered by ScreenCaptureKit.**
+  Symptoms observed from the last run:
+- - Recording process (`RecordingManager.startRecordingAsync`) now appears to complete successfully.
+- - Timer ticks correctly.
+- - UI shows "Stop" button and timer updates.
+- - However, the output MOV file is 0 bytes (or removed if 0 bytes at finalization).
+- - `VideoProcessor.videoFramesProcessed` remains 0.
+- - `RecordingManager.handleSampleBuffer` is not being called for `.screen` type samples (verified by missing debug logs).
++ - Recording initialization completes, timer runs, UI is responsive.
++ - Input tracking (mouse/keyboard JSON) WORKS when Accessibility permissions are granted.
++ - Output MOV file is 0 bytes because no video frames are processed (`VideoProcessor.videoFramesProcessed` is 0).
++ - Debug logs show that `SCStreamFrameOutput.stream(_:didOutputSampleBuffer:ofType:)` (our custom class method that should receive frames from SCStream) is NOT being called for `.screen` type.
+  
+  **Diagnosis from logs:**
+- - `VideoProcessor.setupVideoWriter` and subsequent AVFoundation setup calls now succeed (crash fixed).
+- - `CaptureSessionManager.createStream` successfully adds an `SCStreamFrameOutput` for `.screen` type.
+- - `CaptureSessionManager.startCapture` reports success for `SCStream`.
+- - Despite this, the `sampleHandlerQueue` closure in `SCStreamFrameOutput` (which calls `RecordingManager.handleSampleBuffer` via `CaptureSessionManager.handleStreamOutput`) is apparently not being invoked by ScreenCaptureKit, or there's an issue in the dispatch.
++ - `SCStream.startCapture()` reports success.
++ - `SCStreamDelegate.stream(_:didStopWithError:)` is NOT called, indicating no explicit stream error.
++ - The issue seems to be that `SCStream` silently fails to deliver frames after starting.
+  
+  **Suspicion:**
+- - `ScreenCaptureKit`'s `SCStream` might not be delivering frames for an unknown reason (e.g., content filter issue not throwing an error, an internal `SCStream` issue, or a deeper permission problem not caught at startup).
+- - Alternatively, there could be a subtle issue with how the `SCStreamFrameOutput` handler or its queue is configured or interacts with Swift Concurrency / MainActor.
++ - A subtle issue with `SCContentFilter` or `SCStreamConfiguration` that doesn't cause an error at setup but prevents frame generation/delivery.
++ - An underlying `ScreenCaptureKit` or OS-level issue specific to the current environment or display being captured.
+  
+  **Next Steps:**
+- - Add a print statement inside the `SCStreamFrameOutput`'s `sampleHandler` closure in `CaptureSessionManager.createStream` to see if the closure itself is ever called by `ScreenCaptureKit`.
+- - Verify `SCContentFilter` configuration details carefully.
+- - Check `SCStreamDelegate` methods in `CaptureSessionManager` for any error callbacks that might not be evident.
++ - Added a prominent print statement at the absolute beginning of `SCStreamFrameOutput.stream(_:didOutputSampleBuffer:ofType:)`.
++ - Analyze logs after the next run: if this new print doesn't appear for `.screen` type, it confirms SCStream is not calling our handler.
++ - If no frames, consider: 
++     - Simplifying `SCStreamConfiguration` further (e.g., lower resolution, different pixel format if possible, though BGRA is standard).
++     - Trying to capture a different `SCDisplay` if available.
++     - Consulting `ScreenCaptureKit` documentation for reasons why a stream might start but not deliver frames.
+  
+- **Secondary Issue: Input tracking files (JSON) are empty.**
+- - Cause: Accessibility permissions are denied.
+- - Log: `Accessibility permission status: Denied`
+- - Action: This requires manual user intervention in System Settings. Add a note for the user.
++ **Secondary Issue: Input tracking files (JSON) require manual permission.**
++ - Status: Works correctly IF user grants Accessibility permission in System Settings.
++ - Action: This is expected behavior. Consider adding in-app guidance or a check that directs the user to System Settings if permission is denied and tracking is enabled.
+  
+  ---
+- Original issue list (mostly resolved or superseded by the video frame issue):
+- - When I push Record and I then click Stop, the Record button appears (FIXED, UI updates correctly based on `isRecording`)
+- - When I push Record, the timer does not tick, stays at 0 (FIXED, timer now ticks)
+- - The final JSONs are just `[]` (Due to Accessibility permissions)
+- - The final MOV is 11 bytes (Now 0 bytes / removed, primary issue is no frames)
++ Original issue list (mostly resolved or addressed):
++ - Record button behavior: FIXED
++ - Timer not ticking: FIXED
++ - JSONs empty: Explained by Accessibility (works if granted)
++ - MOV empty: Current primary issue (no frames delivered)
+  ---
+  
+```
+
+---
+
+The `TODO.md` is updated. We're now ready to run the app again with the new print statement in `SCStreamFrameOutput.swift`. This will be a crucial test to see if ScreenCaptureKit is delivering any frames to our custom output handler.The build errors are fixed, and we've narrowed down the problem significantly. The application now initializes the recording process, the timer runs, and input tracking works correctly (assuming Accessibility permissions are granted by the user).
+
+The primary remaining issue is that **no video frames are being delivered by ScreenCaptureKit's `SCStream`** to our application, resulting in an empty video file.
+- We've confirmed that `SCStream.startCapture()` reports success and no errors are reported by the `SCStreamDelegate`.
+- We've added a prominent `print` statement at the very beginning of the `stream(_:didOutputSampleBuffer:ofType:)` method in our custom `SCStreamFrameOutput` class. This method is the first point in our code that should be called by ScreenCaptureKit when a frame is available.
+
+When you run `./run.sh` next:
+-   Look for this new log: `<<<< FRAME RECEIVED BY SCStreamFrameOutput (custom class) - Type: screen >>>>`
+-   If this log appears, then frames *are* being delivered, and the problem is in how we pass them from `SCStreamFrameOutput` to `RecordingManager`.
+-   If this log *does not* appear, it confirms that `SCStream` is not sending frames, despite a successful start. In this case, we'll need to investigate the `SCStreamConfiguration` and `SCContentFilter` more deeply or look for known ScreenCaptureKit issues related to frame delivery.
+
+Regarding input tracking: remember that for the mouse and keyboard JSON files to contain data, the user must manually grant Accessibility permissions to the "DidYouGet" application in `System Settings > Privacy & Security > Accessibility`. The logs now show "Accessibility permission status: Granted", which is why the input tracking files had data in the last run. This is good!
+
+Please proceed to run `./run.sh`.
+
+---
+
+_**User**_
+
+you do
+
+---
+
+_**Assistant**_
+
+```bash
+./run.sh
+```
+
+```
+Building Did You Get It app in debug mode...
+Building for debugging...
+[7/7] Applying DidYouGet
+Build complete! (2.09s)
+Build successful!
+Running application from: /Users/adam/Developer/vcs/github.twardoch/pub/didyouge
+t.it/.build/x86_64-apple-macosx/debug/DidYouGet
+=== APPLICATION INITIALIZATION ===
+Application starting up. macOS Version: Version 15.5 (Build 24F74)
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+No persisted recording was active
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+No persisted recording was active
+WARNING: PreferencesManager not connected to RecordingManager during app init
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+No persisted recording was active
+ContentView appeared - ensuring PreferencesManager is connected
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+ContentView onAppear - checking recording state
+Not currently recording, safe to reset state
+Resetting recording state
+Clearing persisted recording state
+Recording state reset complete
+Record button clicked - first ensuring PreferencesManager is connected
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+PreferencesManager confirmed connected, starting recording
+Resetting recording state
+Clearing persisted recording state
+Recording state reset complete
+
+=== STARTING RECORDING ===
+
+Recording source: Display with ID 69734662
+Recording options: Audio=false, Mouse=true, Keyboard=true
+Base output directory: /Users/adam/Movies
+Created/verified recording directory: /Users/adam/Movies/DidYouGetIt_2025-05-21_
+01-47-39
+✓ Successfully tested write permissions in directory
+Created recording session marker file with session info
+Created placeholder for video file at: /Users/adam/Movies/DidYouGetIt_2025-05-21
+_01-47-39/DidYouGetIt_2025-05-21_01-47-39.mov
+Created placeholder for mouse tracking file at: /Users/adam/Movies/DidYouGetIt_2
+025-05-21_01-47-39/DidYouGetIt_2025-05-21_01-47-39_mouse.json
+Created placeholder for keyboard tracking file at: /Users/adam/Movies/DidYouGetI
+t_2025-05-21_01-47-39/DidYouGetIt_2025-05-21_01-47-39_keyboard.json
+Mouse tracking path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-47-39/DidYouGe
+tIt_2025-05-21_01-47-39_mouse.json
+Keyboard tracking path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-47-39/DidYo
+uGetIt_2025-05-21_01-47-39_keyboard.json
+Video output path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-47-39/DidYouGetI
+t_2025-05-21_01-47-39.mov
+No separate audio file will be created (mixed with video or audio disabled)
+Saved video output URL to UserDefaults: file:///Users/adam/Movies/DidYouGetIt_20
+25-05-21_01-47-39/DidYouGetIt_2025-05-21_01-47-39.mov
+Configuring stream settings...
+Setting frame rate to 60 FPS
+Aspect ratio preservation enabled (macOS 14+)
+Setting up content filter based on capture type: display
+Capturing display 69734662 at 3072 x 1920 (with Retina scaling)
+VIDEO CONFIG: Width=3072, Height=1920, Quality=High, FrameRate=60
+Adding dummy capture callback for initialization
+Initializing capture system with warmup frame...
+✓ Received dummy initialization frame
+Dummy capture completed successfully
+Creating video asset writer with output URL: /Users/adam/Movies/DidYouGetIt_2025
+-05-21_01-47-39/DidYouGetIt_2025-05-21_01-47-39.mov
+Removed existing video file at /Users/adam/Movies/DidYouGetIt_2025-05-21_01-47-3
+9/DidYouGetIt_2025-05-21_01-47-39.mov
+✓ Successfully created empty placeholder file at /Users/adam/Movies/DidYouGetIt_
+2025-05-21_01-47-39/DidYouGetIt_2025-05-21_01-47-39.mov
+✓ Video asset writer created successfully, initial status: 0
+WARNING: AVAssetWriter did not immediately create file on disk
+Configuring video input settings
+Using video quality: High with bitrate: 20 Mbps
+VIDEO CONFIG: Width=3072, Height=1920, BitRate=20Mbps, FrameRate=60
+DEBUG_VP: Attempting to create AVAssetWriterInput...
+DEBUG_VP: AVAssetWriterInput creation attempted (videoInput is not nil).
+DEBUG_VP: Checking if writer can add videoInput...
+DEBUG_VP: Writer can add videoInput. Attempting to add...
+DEBUG_VP: writer.add(videoInput) executed.
+DEBUG_VP: Attempting to return from setupVideoWriter...
+DEBUG: Returned from videoProcessor.setupVideoWriter successfully.
+DEBUG: Checking audio preferences...
+DEBUG: Audio recording is DISABLED in preferences.
+DEBUG: Finished checking audio preferences.
+Attempting to start video writer...
+Starting video asset writer...
+VideoWriter.startWriting() returned true
+✓ Video writer started successfully, status: 1
+✓ Video writer started.
+Attempting to create SCStream...
+Creating SCStream with configured filter and settings
+SCStreamFrameOutput initialized - ready to receive frames
+Screen capture output added successfully (using custom SCStreamFrameOutput)
+✓ SCStream created.
+Attempting to start video/audio processor sessions...
+Starting video writer session at time: 0.0...
+✓ Video writer session started successfully
+✓ Video file already exists at path
+✓ Video/audio processor sessions started.
+Attempting to run timer setup on MainActor...
+Inside MainActor.run for timer setup.
+Saved recording start time to UserDefaults: 2025-05-20 23:47:40 +0000
+Starting recording timer at: 2025-05-20 23:47:40 +0000
+Setting immediate startTime to 2025-05-20 23:47:40 +0000
+Setting initial recordingDuration to 0
+Creating timer with captured startTime 2025-05-20 23:47:40 +0000
+✓ Dispatch timer created and activated
+✓ Timer successfully initialized and started
+✓ Timer setup block completed.
+Attempting to start capture session (captureSessionManager.startCapture())...
+Starting SCStream capture...
+Forcing UI refresh for timer
+TIMER UPDATE: Recording duration = 0.02079904079437256 seconds
+Saved duration 0.02079904079437256 to UserDefaults
+SCStream capture started successfully
+✓ Capture session started.
+Attempting to start input tracking...
+Accessibility permission status: Granted
+Mouse tracking enabled, URL: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-47-39/
+DidYouGetIt_2025-05-21_01-47-39_mouse.json
+Starting mouse tracking
+Keyboard tracking enabled, URL: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-47-
+39/DidYouGetIt_2025-05-21_01-47-39_keyboard.json
+Starting keyboard tracking
+✓ Input tracking started or skipped.
+Recording started successfully
+TIMER UPDATE: Recording duration = 0.16550111770629883 seconds
+Saved duration 0.16550111770629883 to UserDefaults
+TIMER UPDATE: Recording duration = 0.20090901851654053 seconds
+Saved duration 0.20090901851654053 to UserDefaults
+TIMER UPDATE: Recording duration = 0.30097103118896484 seconds
+Saved duration 0.30097103118896484 to UserDefaults
+TIMER UPDATE: Recording duration = 0.4009031057357788 seconds
+Saved duration 0.4009031057357788 to UserDefaults
+TIMER UPDATE: Recording duration = 0.5010300874710083 seconds
+Saved duration 0.5010300874710083 to UserDefaults
+TIMER UPDATE: Recording duration = 0.6029690504074097 seconds
+Saved duration 0.6029690504074097 to UserDefaults
+TIMER UPDATE: Recording duration = 0.700937032699585 seconds
+Saved duration 0.700937032699585 to UserDefaults
+TIMER UPDATE: Recording duration = 0.8010050058364868 seconds
+Saved duration 0.8010050058364868 to UserDefaults
+TIMER UPDATE: Recording duration = 0.9033410549163818 seconds
+Saved duration 0.9033410549163818 to UserDefaults
+TIMER UPDATE: Recording duration = 2.0010420083999634 seconds
+TIMER UPDATE: Recording duration = 2.100950002670288 seconds
+TIMER UPDATE: Recording duration = 2.2010430097579956 seconds
+TIMER UPDATE: Recording duration = 2.301050066947937 seconds
+TIMER UPDATE: Recording duration = 2.401075005531311 seconds
+TIMER UPDATE: Recording duration = 2.5009140968322754 seconds
+TIMER UPDATE: Recording duration = 2.6009271144866943 seconds
+TIMER UPDATE: Recording duration = 2.7010300159454346 seconds
+TIMER UPDATE: Recording duration = 2.8009461164474487 seconds
+TIMER UPDATE: Recording duration = 2.9010170698165894 seconds
+TIMER UPDATE: Recording duration = 4.000948071479797 seconds
+TIMER UPDATE: Recording duration = 4.101010084152222 seconds
+TIMER UPDATE: Recording duration = 4.201561093330383 seconds
+TIMER UPDATE: Recording duration = 4.301026105880737 seconds
+TIMER UPDATE: Recording duration = 4.400966048240662 seconds
+TIMER UPDATE: Recording duration = 4.500999093055725 seconds
+TIMER UPDATE: Recording duration = 4.6009910106658936 seconds
+TIMER UPDATE: Recording duration = 4.701025009155273 seconds
+TIMER UPDATE: Recording duration = 4.802439093589783 seconds
+TIMER UPDATE: Recording duration = 4.9009850025177 seconds
+Saved duration 5.0010141134262085 to UserDefaults
+Saved duration 5.100999116897583 to UserDefaults
+Saved duration 5.200972080230713 to UserDefaults
+Saved duration 5.3009620904922485 to UserDefaults
+Saved duration 5.400966048240662 to UserDefaults
+Saved duration 5.500999093055725 to UserDefaults
+Saved duration 5.600998044013977 to UserDefaults
+Saved duration 5.701059103012085 to UserDefaults
+Saved duration 5.8010430335998535 to UserDefaults
+Saved duration 5.9010961055755615 to UserDefaults
+TIMER UPDATE: Recording duration = 6.000986099243164 seconds
+TIMER UPDATE: Recording duration = 6.1009780168533325 seconds
+TIMER UPDATE: Recording duration = 6.20106303691864 seconds
+TIMER UPDATE: Recording duration = 6.301083087921143 seconds
+TIMER UPDATE: Recording duration = 6.401093006134033 seconds
+TIMER UPDATE: Recording duration = 6.5009870529174805 seconds
+TIMER UPDATE: Recording duration = 6.601088047027588 seconds
+TIMER UPDATE: Recording duration = 6.701115012168884 seconds
+TIMER UPDATE: Recording duration = 6.801007032394409 seconds
+TIMER UPDATE: Recording duration = 6.901074051856995 seconds
+TIMER UPDATE: Recording duration = 8.001093029975891 seconds
+TIMER UPDATE: Recording duration = 8.10103702545166 seconds
+TIMER UPDATE: Recording duration = 8.20212209224701 seconds
+TIMER UPDATE: Recording duration = 8.301055073738098 seconds
+TIMER UPDATE: Recording duration = 8.401021003723145 seconds
+TIMER UPDATE: Recording duration = 8.501049041748047 seconds
+TIMER UPDATE: Recording duration = 8.601054072380066 seconds
+TIMER UPDATE: Recording duration = 8.701029062271118 seconds
+TIMER UPDATE: Recording duration = 8.801095008850098 seconds
+TIMER UPDATE: Recording duration = 8.901031017303467 seconds
+TIMER UPDATE: Recording duration = 10.00164008140564 seconds
+Saved duration 10.00164008140564 to UserDefaults
+TIMER UPDATE: Recording duration = 10.10111403465271 seconds
+Saved duration 10.10111403465271 to UserDefaults
+TIMER UPDATE: Recording duration = 10.201160073280334 seconds
+Saved duration 10.201160073280334 to UserDefaults
+TIMER UPDATE: Recording duration = 10.301180005073547 seconds
+Saved duration 10.301180005073547 to UserDefaults
+TIMER UPDATE: Recording duration = 10.401172041893005 seconds
+Saved duration 10.401172041893005 to UserDefaults
+TIMER UPDATE: Recording duration = 10.501175045967102 seconds
+Saved duration 10.501175045967102 to UserDefaults
+TIMER UPDATE: Recording duration = 10.601135015487671 seconds
+Saved duration 10.601135015487671 to UserDefaults
+TIMER UPDATE: Recording duration = 10.701645016670227 seconds
+Saved duration 10.701645016670227 to UserDefaults
+TIMER UPDATE: Recording duration = 10.801196098327637 seconds
+Saved duration 10.801196098327637 to UserDefaults
+TIMER UPDATE: Recording duration = 10.901190042495728 seconds
+Saved duration 10.901190042495728 to UserDefaults
+TIMER UPDATE: Recording duration = 12.001246094703674 seconds
+TIMER UPDATE: Recording duration = 12.101177096366882 seconds
+TIMER UPDATE: Recording duration = 12.201237082481384 seconds
+TIMER UPDATE: Recording duration = 12.301236033439636 seconds
+TIMER UPDATE: Recording duration = 12.401211023330688 seconds
+TIMER UPDATE: Recording duration = 12.50117301940918 seconds
+TIMER UPDATE: Recording duration = 12.60117506980896 seconds
+TIMER UPDATE: Recording duration = 12.7047700881958 seconds
+TIMER UPDATE: Recording duration = 12.801145076751709 seconds
+TIMER UPDATE: Recording duration = 12.901205062866211 seconds
+TIMER UPDATE: Recording duration = 14.001167058944702 seconds
+TIMER UPDATE: Recording duration = 14.101161003112793 seconds
+TIMER UPDATE: Recording duration = 14.201214075088501 seconds
+TIMER UPDATE: Recording duration = 14.301163077354431 seconds
+TIMER UPDATE: Recording duration = 14.401286005973816 seconds
+TIMER UPDATE: Recording duration = 14.501220107078552 seconds
+TIMER UPDATE: Recording duration = 14.601145029067993 seconds
+TIMER UPDATE: Recording duration = 14.70348608493805 seconds
+TIMER UPDATE: Recording duration = 14.802858114242554 seconds
+TIMER UPDATE: Recording duration = 14.901225090026855 seconds
+Saved duration 15.001166105270386 to UserDefaults
+Saved duration 15.101174116134644 to UserDefaults
+Saved duration 15.201235055923462 to UserDefaults
+Saved duration 15.301199078559875 to UserDefaults
+Saved duration 15.401167035102844 to UserDefaults
+Saved duration 15.501175045967102 to UserDefaults
+Saved duration 15.60126805305481 to UserDefaults
+Saved duration 15.703967094421387 to UserDefaults
+Saved duration 15.80441403388977 to UserDefaults
+Saved duration 15.903773069381714 to UserDefaults
+TIMER UPDATE: Recording duration = 16.013973116874695 seconds
+TIMER UPDATE: Recording duration = 16.101242065429688 seconds
+ContentView onAppear - checking recording state
+Recording is active, preserving state
+TIMER UPDATE: Recording duration = 16.201258063316345 seconds
+TIMER UPDATE: Recording duration = 16.30123209953308 seconds
+TIMER UPDATE: Recording duration = 16.401234030723572 seconds
+TIMER UPDATE: Recording duration = 16.50117599964142 seconds
+TIMER UPDATE: Recording duration = 16.601269006729126 seconds
+TIMER UPDATE: Recording duration = 16.70424509048462 seconds
+TIMER UPDATE: Recording duration = 16.801208019256592 seconds
+TIMER UPDATE: Recording duration = 16.901247024536133 seconds
+Stop button clicked - requesting stop via RecordingManager
+Stop recording requested via stopRecording()
+
+=== STOPPING RECORDING (INTERNAL) ===
+
+Setting isRecording = false
+Cancelling dispatch timer
+Explicitly setting recordingDuration to 0 for UI update.
+Stopping input tracking
+Mouse tracking data saved to: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-47-39
+/DidYouGetIt_2025-05-21_01-47-39_mouse.json
+Keyboard tracking data saved to: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-47
+-39/DidYouGetIt_2025-05-21_01-47-39_keyboard.json
+Stopping capture session
+Stopping SCStream capture...
+Stream capture stopped successfully
+Waiting for buffers to flush (0.5s delay)...
+Finalizing recording files
+Finalizing video file...
+PRE-FINALIZE VIDEO FILE SIZE: 0 bytes
+CRITICAL WARNING: Video file is empty (0 bytes) before finalization!
+WRITER STATE DUMP:
+  - Status: 1
+  - Error: nil
+  - Video frames processed: 0
+Marking video input as finished
+Video successfully finalized
+POST-FINALIZE VIDEO FILE SIZE: 0 bytes
+Removed zero-length video file at /Users/adam/Movies/DidYouGetIt_2025-05-21_01-4
+7-39/DidYouGetIt_2025-05-21_01-47-39.mov
+INFO: No separate audio writer to finalize
+
+=== RECORDING DIAGNOSTICS ===
+
+Video frames processed: 0
+Audio samples processed: 0
+Checking Video file: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-47-39/DidYouGe
+tIt_2025-05-21_01-47-39.mov
+ERROR: Video file not found at expected location: /Users/adam/Movies/DidYouGetIt
+_2025-05-21_01-47-39/DidYouGetIt_2025-05-21_01-47-39.mov
+Checking Mouse tracking file: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-47-39
+/DidYouGetIt_2025-05-21_01-47-39_mouse.json
+Mouse tracking file size: 60697 bytes
+✓ Mouse tracking file successfully saved with size: 60697 bytes
+Mouse tracking file created at: 2025-05-20 23:47:40 +0000
+Checking Keyboard tracking file: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-47
+-39/DidYouGetIt_2025-05-21_01-47-39_keyboard.json
+Keyboard tracking file size: 1801 bytes
+✓ Keyboard tracking file successfully saved with size: 1801 bytes
+Keyboard tracking file created at: 2025-05-20 23:47:40 +0000
+Recording stopped successfully (Internal)
+stopRecordingAsyncInternal completed successfully.
+Proceeding to forceFullReset() after stop attempt.
+EMERGENCY: Forcing immediate reset of all recording state
+Emergency reset complete - all state variables cleared
+stopRecording() finished. UI should reflect stopped state.
+
+```
+
+---
+
+The log output is still the same regarding frame delivery:
+The crucial line `<<<< FRAME RECEIVED BY SCStreamFrameOutput (custom class) - Type: screen >>>>` (from `SCStreamFrameOutput.swift`) is **MISSING**.
+
+This confirms that `ScreenCaptureKit`'s `SCStream` is not calling the `stream(_:didOutputSampleBuffer:ofType:)` delegate method on our `SCStreamFrameOutput` instance for screen frames, even though:
+- `SCStream` initialization appears successful.
+- `stream.addStreamOutput(customFrameOutput, type: .screen, ...)` appears successful.
+- `stream.startCapture()` reports success.
+- No errors are reported by the `SCStreamDelegate` method `stream(_:didStopWithError:)`.
+
+The application is correctly set up to *receive* frames, but `SCStream` isn't sending them.
+
+At this point, the issue seems to be deeply rooted in the interaction with `ScreenCaptureKit`, specifically why `SCStream` would start but not deliver frames for the `.screen` type under the current configuration.
+
+Possible avenues to investigate (some were in `TODO.md`):
+1.  **`SCStreamConfiguration` Simplification/Alteration:**
+    *   **Resolution:** The current resolution is 3072x1920 (Retina scaled). Try a much smaller, standard resolution like 1920x1080 (non-Retina) or even 1280x720 to see if it's a size constraint.
+        *   In `CaptureSessionManager.configureCaptureSession` for `.display` case:
+            ```swift
+            // scConfig.width = screenWidth * scale 
+            // scConfig.height = screenHeight * scale
+            scConfig.width = 1920 // Test
+            scConfig.height = 1080 // Test
+            print("Capturing display \(display.displayID) at TEST 1920x1080")
+            ```
+    *   **Pixel Format:** `kCVPixelFormatType_32BGRA` is standard. Unlikely to be an issue but could be tested with `kCVPixelFormatType_32ARGB` if desperate.
+    *   **`queueDepth`:** Currently 5. Try varying this (e.g., 3 or 8).
+    *   **`scalesToFit`:** Currently true. What if it's false? (Though for full display, it shouldn't matter much).
+
+2.  **`SCContentFilter`:**
+    *   For display capture, `SCContentFilter(display: display, excludingWindows: [])` is the standard. It's hard to see an issue here unless `display` itself is problematic (e.g., a virtual display or one with specific hardware issues).
+    *   If multiple displays are available, explicitly trying to capture a *different* physical display could rule out a display-specific problem.
+
+3.  **`SCStream` Delegate:** Ensure all potentially relevant `SCStreamDelegate` methods are implemented, even if just with a print statement, to catch any other state changes or notifications from the stream (e.g., `streamDidStart(_:)`, `streamDidPause(_:)`, `streamDidResume(_:)`).
+
+4.  **Minimum Screen Activity:** Ensure there's *some* activity on the screen being captured (e.g., mouse movement, a ticking clock widget) just in case `SCStream` is aggressively optimizing away perfectly static frames (though this is unlikely to result in *zero* frames over many seconds).
+
+Given the dummy capture works, it suggests the basic mechanism is fine. The difference must be in the main recording's filter or configuration. The most impactful and easiest first test is to drastically simplify the output resolution in `SCStreamConfiguration`.
+
+**Plan:**
+1.  In `CaptureSessionManager.configureCaptureSession`, for the `.display` case, temporarily force `scConfig.width = 1920` and `scConfig.height = 1080` (and adjust the print statement) to see if a standard HD resolution works.
+2.  Run `./run.sh` and check for the `<<<< FRAME RECEIVED... >>>>` log.
+
+---
+
+```diff
+              
+              // Update configuration for display resolution with Retina support
+-             let screenWidth = Int(display.frame.width)
+-             let screenHeight = Int(display.frame.height)
+-             let scale = 2 // Retina scale factor
+-             
+-             scConfig.width = screenWidth * scale
+-             scConfig.height = screenHeight * scale
+-             print("Capturing display \(display.displayID) at \(screenWidth * scale) x \(screenHeight * scale) (with Retina scaling)")
++             // let screenWidth = Int(display.frame.width)
++             // let screenHeight = Int(display.frame.height)
++             // let scale = 2 // Retina scale factor
++             // scConfig.width = screenWidth * scale
++             // scConfig.height = screenHeight * scale
++             // print("Capturing display \(display.displayID) at \(screenWidth * scale) x \(screenHeight * scale) (with Retina scaling)")
++ 
++             // FORCED TEST RESOLUTION
++             scConfig.width = 1920
++             scConfig.height = 1080
++             print("TEST: Capturing display \(display.displayID) at FORCED 1920x1080")
+              
+          case .window:
+```
+
+---
+
+The resolution has been forced to 1920x1080 for display capture in `CaptureSessionManager.swift`.
+
+Now, let's run `./run.sh` and meticulously check for the `<<<< FRAME RECEIVED BY SCStreamFrameOutput (custom class) - Type: screen >>>>` log message.The resolution for display capture has been temporarily forced to a standard 1920x1080 in `CaptureSessionManager.configureCaptureSession`. This is a test to see if the high Retina resolution (3072x1920) was somehow preventing `SCStream` from delivering frames.
+
+Please run `./run.sh`. We are looking for the following log message:
+`<<<< FRAME RECEIVED BY SCStreamFrameOutput (custom class) - Type: screen >>>>`
+
+If this message appears, it means frames are now being delivered, and the high resolution was likely the issue.
+If it still doesn't appear, the problem is more elusive and not simply the capture dimensions.
+
+---
+
+_**User**_
+
+./run.sh
+
+---
+
+_**Assistant**_
+
+```bash
+./run.sh
+```
+
+```
+Building Did You Get It app in debug mode...
+Building for debugging...
+[7/7] Applying DidYouGet
+Build complete! (2.18s)
+Build successful!
+Running application from: /Users/adam/Developer/vcs/github.twardoch/pub/didyouge
+t.it/.build/x86_64-apple-macosx/debug/DidYouGet
+=== APPLICATION INITIALIZATION ===
+Application starting up. macOS Version: Version 15.5 (Build 24F74)
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+No persisted recording was active
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+No persisted recording was active
+WARNING: PreferencesManager not connected to RecordingManager during app init
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+No persisted recording was active
+ContentView appeared - ensuring PreferencesManager is connected
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+ContentView onAppear - checking recording state
+Not currently recording, safe to reset state
+Resetting recording state
+Clearing persisted recording state
+Recording state reset complete
+Record button clicked - first ensuring PreferencesManager is connected
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+PreferencesManager confirmed connected, starting recording
+Resetting recording state
+Clearing persisted recording state
+Recording state reset complete
+
+=== STARTING RECORDING ===
+
+Recording source: Display with ID 69734662
+Recording options: Audio=false, Mouse=true, Keyboard=true
+Base output directory: /Users/adam/Movies
+Created/verified recording directory: /Users/adam/Movies/DidYouGetIt_2025-05-21_
+01-49-41
+✓ Successfully tested write permissions in directory
+Created recording session marker file with session info
+Created placeholder for video file at: /Users/adam/Movies/DidYouGetIt_2025-05-21
+_01-49-41/DidYouGetIt_2025-05-21_01-49-41.mov
+Created placeholder for mouse tracking file at: /Users/adam/Movies/DidYouGetIt_2
+025-05-21_01-49-41/DidYouGetIt_2025-05-21_01-49-41_mouse.json
+Created placeholder for keyboard tracking file at: /Users/adam/Movies/DidYouGetI
+t_2025-05-21_01-49-41/DidYouGetIt_2025-05-21_01-49-41_keyboard.json
+Mouse tracking path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-49-41/DidYouGe
+tIt_2025-05-21_01-49-41_mouse.json
+Keyboard tracking path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-49-41/DidYo
+uGetIt_2025-05-21_01-49-41_keyboard.json
+Video output path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-49-41/DidYouGetI
+t_2025-05-21_01-49-41.mov
+No separate audio file will be created (mixed with video or audio disabled)
+Saved video output URL to UserDefaults: file:///Users/adam/Movies/DidYouGetIt_20
+25-05-21_01-49-41/DidYouGetIt_2025-05-21_01-49-41.mov
+Configuring stream settings...
+Setting frame rate to 60 FPS
+Aspect ratio preservation enabled (macOS 14+)
+Setting up content filter based on capture type: display
+TEST: Capturing display 69734662 at FORCED 1920x1080
+VIDEO CONFIG: Width=1920, Height=1080, Quality=High, FrameRate=60
+Adding dummy capture callback for initialization
+Initializing capture system with warmup frame...
+✓ Received dummy initialization frame
+Dummy capture completed successfully
+Creating video asset writer with output URL: /Users/adam/Movies/DidYouGetIt_2025
+-05-21_01-49-41/DidYouGetIt_2025-05-21_01-49-41.mov
+Removed existing video file at /Users/adam/Movies/DidYouGetIt_2025-05-21_01-49-4
+1/DidYouGetIt_2025-05-21_01-49-41.mov
+✓ Successfully created empty placeholder file at /Users/adam/Movies/DidYouGetIt_
+2025-05-21_01-49-41/DidYouGetIt_2025-05-21_01-49-41.mov
+✓ Video asset writer created successfully, initial status: 0
+WARNING: AVAssetWriter did not immediately create file on disk
+Configuring video input settings
+Using video quality: High with bitrate: 20 Mbps
+VIDEO CONFIG: Width=1920, Height=1080, BitRate=20Mbps, FrameRate=60
+DEBUG_VP: Attempting to create AVAssetWriterInput...
+DEBUG_VP: AVAssetWriterInput creation attempted (videoInput is not nil).
+DEBUG_VP: Checking if writer can add videoInput...
+DEBUG_VP: Writer can add videoInput. Attempting to add...
+DEBUG_VP: writer.add(videoInput) executed.
+DEBUG_VP: Attempting to return from setupVideoWriter...
+DEBUG: Returned from videoProcessor.setupVideoWriter successfully.
+DEBUG: Checking audio preferences...
+DEBUG: Audio recording is DISABLED in preferences.
+DEBUG: Finished checking audio preferences.
+Attempting to start video writer...
+Starting video asset writer...
+VideoWriter.startWriting() returned true
+✓ Video writer started successfully, status: 1
+✓ Video writer started.
+Attempting to create SCStream...
+Creating SCStream with configured filter and settings
+SCStreamFrameOutput initialized - ready to receive frames
+Screen capture output added successfully (using custom SCStreamFrameOutput)
+✓ SCStream created.
+Attempting to start video/audio processor sessions...
+Starting video writer session at time: 0.0...
+✓ Video writer session started successfully
+✓ Video file already exists at path
+✓ Video/audio processor sessions started.
+Attempting to run timer setup on MainActor...
+Inside MainActor.run for timer setup.
+Saved recording start time to UserDefaults: 2025-05-20 23:49:42 +0000
+Starting recording timer at: 2025-05-20 23:49:42 +0000
+Setting immediate startTime to 2025-05-20 23:49:42 +0000
+Setting initial recordingDuration to 0
+Creating timer with captured startTime 2025-05-20 23:49:42 +0000
+✓ Dispatch timer created and activated
+✓ Timer successfully initialized and started
+✓ Timer setup block completed.
+Attempting to start capture session (captureSessionManager.startCapture())...
+Starting SCStream capture...
+Forcing UI refresh for timer
+TIMER UPDATE: Recording duration = 0.019053936004638672 seconds
+Saved duration 0.019053936004638672 to UserDefaults
+SCStream capture started successfully
+✓ Capture session started.
+Attempting to start input tracking...
+Accessibility permission status: Granted
+Mouse tracking enabled, URL: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-49-41/
+DidYouGetIt_2025-05-21_01-49-41_mouse.json
+Starting mouse tracking
+Keyboard tracking enabled, URL: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-49-
+41/DidYouGetIt_2025-05-21_01-49-41_keyboard.json
+Starting keyboard tracking
+✓ Input tracking started or skipped.
+Recording started successfully
+TIMER UPDATE: Recording duration = 0.1817539930343628 seconds
+Saved duration 0.1817539930343628 to UserDefaults
+TIMER UPDATE: Recording duration = 0.20022797584533691 seconds
+Saved duration 0.20022797584533691 to UserDefaults
+TIMER UPDATE: Recording duration = 0.3037179708480835 seconds
+Saved duration 0.3037179708480835 to UserDefaults
+TIMER UPDATE: Recording duration = 0.40250301361083984 seconds
+Saved duration 0.40250301361083984 to UserDefaults
+TIMER UPDATE: Recording duration = 0.5003859996795654 seconds
+Saved duration 0.5003859996795654 to UserDefaults
+TIMER UPDATE: Recording duration = 0.6031639575958252 seconds
+Saved duration 0.6031639575958252 to UserDefaults
+TIMER UPDATE: Recording duration = 0.703665018081665 seconds
+Saved duration 0.703665018081665 to UserDefaults
+TIMER UPDATE: Recording duration = 0.8027459383010864 seconds
+Saved duration 0.8027459383010864 to UserDefaults
+TIMER UPDATE: Recording duration = 0.9030239582061768 seconds
+Saved duration 0.9030239582061768 to UserDefaults
+TIMER UPDATE: Recording duration = 2.0025129318237305 seconds
+TIMER UPDATE: Recording duration = 2.1026819944381714 seconds
+TIMER UPDATE: Recording duration = 2.2033729553222656 seconds
+TIMER UPDATE: Recording duration = 2.3029749393463135 seconds
+TIMER UPDATE: Recording duration = 2.4034210443496704 seconds
+TIMER UPDATE: Recording duration = 2.503391981124878 seconds
+TIMER UPDATE: Recording duration = 2.6048070192337036 seconds
+TIMER UPDATE: Recording duration = 2.7025539875030518 seconds
+TIMER UPDATE: Recording duration = 2.8034199476242065 seconds
+TIMER UPDATE: Recording duration = 2.900866985321045 seconds
+Stop button clicked - requesting stop via RecordingManager
+Stop recording requested via stopRecording()
+
+=== STOPPING RECORDING (INTERNAL) ===
+
+Setting isRecording = false
+Cancelling dispatch timer
+Explicitly setting recordingDuration to 0 for UI update.
+Stopping input tracking
+Mouse tracking data saved to: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-49-41
+/DidYouGetIt_2025-05-21_01-49-41_mouse.json
+Keyboard tracking data saved to: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-49
+-41/DidYouGetIt_2025-05-21_01-49-41_keyboard.json
+Stopping capture session
+Stopping SCStream capture...
+Stream capture stopped successfully
+Waiting for buffers to flush (0.5s delay)...
+Finalizing recording files
+Finalizing video file...
+PRE-FINALIZE VIDEO FILE SIZE: 0 bytes
+CRITICAL WARNING: Video file is empty (0 bytes) before finalization!
+WRITER STATE DUMP:
+  - Status: 1
+  - Error: nil
+  - Video frames processed: 0
+Marking video input as finished
+Video successfully finalized
+POST-FINALIZE VIDEO FILE SIZE: 0 bytes
+Removed zero-length video file at /Users/adam/Movies/DidYouGetIt_2025-05-21_01-4
+9-41/DidYouGetIt_2025-05-21_01-49-41.mov
+INFO: No separate audio writer to finalize
+
+=== RECORDING DIAGNOSTICS ===
+
+Video frames processed: 0
+Audio samples processed: 0
+Checking Video file: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-49-41/DidYouGe
+tIt_2025-05-21_01-49-41.mov
+ERROR: Video file not found at expected location: /Users/adam/Movies/DidYouGetIt
+_2025-05-21_01-49-41/DidYouGetIt_2025-05-21_01-49-41.mov
+Checking Mouse tracking file: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-49-41
+/DidYouGetIt_2025-05-21_01-49-41_mouse.json
+Mouse tracking file size: 18763 bytes
+✓ Mouse tracking file successfully saved with size: 18763 bytes
+Mouse tracking file created at: 2025-05-20 23:49:42 +0000
+Checking Keyboard tracking file: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-49
+-41/DidYouGetIt_2025-05-21_01-49-41_keyboard.json
+Keyboard tracking file size: 108 bytes
+✓ Keyboard tracking file successfully saved with size: 108 bytes
+Keyboard tracking file created at: 2025-05-20 23:49:42 +0000
+Recording stopped successfully (Internal)
+stopRecordingAsyncInternal completed successfully.
+Proceeding to forceFullReset() after stop attempt.
+EMERGENCY: Forcing immediate reset of all recording state
+Emergency reset complete - all state variables cleared
+stopRecording() finished. UI should reflect stopped state.
+
+```
+
+---
+
+No change. The log is identical to the previous one regarding frame delivery.
+The crucial line `<<<< FRAME RECEIVED BY SCStreamFrameOutput (custom class) - Type: screen >>>>` is **still missing**.
+
+This means that even when forcing the `SCStreamConfiguration` to a standard 1920x1080 resolution, `SCStream` is not delivering any frames to our `SCStreamFrameOutput` instance.
+
+The problem is very likely not in our frame *handling* code (from `SCStreamFrameOutput` downwards to `VideoProcessor`), but rather in `SCStream` itself not *producing* frames for our main recording session, or not calling our output handler.
+
+This is perplexing because:
+- The `addDummyCapture()` *does* receive a frame, showing the basic capability is there.
+- `SCStream.startCapture()` reports success for the main recording.
+- No errors are reported by `SCStreamDelegate`.
+
+At this point, we should consider some less common possibilities or look for subtle differences between the dummy capture setup and the main capture setup.
+
+**Differences between Dummy Capture and Main Capture:**
+
+*   **`SCStream` Delegate:**
+    *   Dummy: `delegate: nil`
+    *   Main: `delegate: self` (where `self` is `CaptureSessionManager`)
+    Could the delegate methods, or the presence of a delegate, be influencing frame delivery or causing an unlogged issue? Unlikely to stop frames without an error, but possible.
+
+*   **`SCStreamOutput` Instance:**
+    *   Dummy: Uses a new, simple `DummyCaptureHandler` class instance.
+    *   Main: Uses an instance of our `SCStreamFrameOutput` class.
+    Both conform to `SCStreamOutput`. `SCStreamFrameOutput` has more logic but its `stream(_:didOutputSampleBuffer:ofType:)` method should still be called.
+
+*   **`SCStreamConfiguration` Details (beyond resolution):**
+    *   Dummy: `width = 320, height = 240, minimumFrameInterval = CMTime(value: 1, timescale: 5), queueDepth = 1`. No audio, no `pixelFormat` explicitly set (defaults likely), no `scalesToFit`, no `preservesAspectRatio`.
+    *   Main (even with forced 1920x1080): `queueDepth = 5`, `pixelFormat = kCVPixelFormatType_32BGRA`, `scalesToFit = true`, `preservesAspectRatio` (macOS 14+), `minimumFrameInterval` for 60fps.
+
+*   **`SCContentFilter`:**
+    *   Dummy: `SCContentFilter(display: firstDisplay, excludingWindows: [])`
+    *   Main: `SCContentFilter(display: display, excludingWindows: [])` (where `display` is `selectedScreen`). This should be equivalent if `selectedScreen` is a valid display.
+
+**Things to try, systematically:**
+
+1.  **Set Delegate to `nil` for Main Capture:**
+    In `CaptureSessionManager.createStream`, change:
+    `captureSession = SCStream(filter: filter, configuration: config, delegate: self)`
+    to:
+    `captureSession = SCStream(filter: filter, configuration: config, delegate: nil)`
+    This will tell us if the delegate interaction is somehow problematic.
+
+2.  **Simplify `SCStreamConfiguration` for Main Capture further:**
+    If (1) doesn't work, revert it. Then, in `CaptureSessionManager.configureCaptureSession` for the `.display` case, make the `scConfig` *as close as possible* to the dummy capture's config, just with the 1920x1080 resolution:
+    *   `scConfig.queueDepth = 1` (like dummy)
+    *   Comment out `scConfig.pixelFormat = kCVPixelFormatType_32BGRA` (let it default like dummy)
+    *   Comment out `scConfig.scalesToFit = true`
+    *   Comment out `scConfig.preservesAspectRatio = ...`
+    *   Keep `minimumFrameInterval` for 60fps (or even try 5fps like dummy temporarily).
+
+Let's try step 1 first: setting the `SCStream` delegate to `nil` for the main capture.
+
+---
+
+```diff
+  
+          print("Creating SCStream with configured filter and settings")
+-         captureSession = SCStream(filter: filter, configuration: config, delegate: self)
++         captureSession = SCStream(filter: filter, configuration: config, delegate: nil)
+          
+          guard let stream = captureSession else {
+```
+
+---
+
+The `SCStream` delegate has been set to `nil` in `CaptureSessionManager.createStream`.
+This means we will no longer get the `stream(_:didStopWithError:)` callback if the stream stops, but it will test if the delegate itself was causing an issue.
+
+Let's run `./run.sh`. We are still looking for the `<<<< FRAME RECEIVED BY SCStreamFrameOutput (custom class) - Type: screen >>>>` log.
+
+---
+
+```bash
+./run.sh
+```
+
+```
+Building Did You Get It app in debug mode...
+Building for debugging...
+[7/7] Applying DidYouGet
+Build complete! (2.42s)
+Build successful!
+Running application from: /Users/adam/Developer/vcs/github.twardoch/pub/didyouge
+t.it/.build/x86_64-apple-macosx/debug/DidYouGet
+=== APPLICATION INITIALIZATION ===
+Application starting up. macOS Version: Version 15.5 (Build 24F74)
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+No persisted recording was active
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+No persisted recording was active
+WARNING: PreferencesManager not connected to RecordingManager during app init
+CaptureSessionManager initialized
+VideoProcessor initialized
+AudioProcessor initialized
+Initializing RecordingManager
+No persisted recording was active
+ContentView appeared - ensuring PreferencesManager is connected
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+ContentView onAppear - checking recording state
+Not currently recording, safe to reset state
+Resetting recording state
+Clearing persisted recording state
+Recording state reset complete
+Record button clicked - first ensuring PreferencesManager is connected
+PreferencesManager set in RecordingManager: DidYouGet.PreferencesManager
+PreferencesManager confirmed connected, starting recording
+Resetting recording state
+Clearing persisted recording state
+Recording state reset complete
+
+=== STARTING RECORDING ===
+
+Recording source: Display with ID 69734662
+Recording options: Audio=false, Mouse=true, Keyboard=true
+Base output directory: /Users/adam/Movies
+Created/verified recording directory: /Users/adam/Movies/DidYouGetIt_2025-05-21_
+01-50-30
+✓ Successfully tested write permissions in directory
+Created recording session marker file with session info
+Created placeholder for video file at: /Users/adam/Movies/DidYouGetIt_2025-05-21
+_01-50-30/DidYouGetIt_2025-05-21_01-50-30.mov
+Created placeholder for mouse tracking file at: /Users/adam/Movies/DidYouGetIt_2
+025-05-21_01-50-30/DidYouGetIt_2025-05-21_01-50-30_mouse.json
+Created placeholder for keyboard tracking file at: /Users/adam/Movies/DidYouGetI
+t_2025-05-21_01-50-30/DidYouGetIt_2025-05-21_01-50-30_keyboard.json
+Mouse tracking path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-50-30/DidYouGe
+tIt_2025-05-21_01-50-30_mouse.json
+Keyboard tracking path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-50-30/DidYo
+uGetIt_2025-05-21_01-50-30_keyboard.json
+Video output path: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-50-30/DidYouGetI
+t_2025-05-21_01-50-30.mov
+No separate audio file will be created (mixed with video or audio disabled)
+Saved video output URL to UserDefaults: file:///Users/adam/Movies/DidYouGetIt_20
+25-05-21_01-50-30/DidYouGetIt_2025-05-21_01-50-30.mov
+Configuring stream settings...
+Setting frame rate to 60 FPS
+Aspect ratio preservation enabled (macOS 14+)
+Setting up content filter based on capture type: display
+TEST: Capturing display 69734662 at FORCED 1920x1080
+VIDEO CONFIG: Width=1920, Height=1080, Quality=High, FrameRate=60
+Adding dummy capture callback for initialization
+Initializing capture system with warmup frame...
+✓ Received dummy initialization frame
+Dummy capture completed successfully
+Creating video asset writer with output URL: /Users/adam/Movies/DidYouGetIt_2025
+-05-21_01-50-30/DidYouGetIt_2025-05-21_01-50-30.mov
+Removed existing video file at /Users/adam/Movies/DidYouGetIt_2025-05-21_01-50-3
+0/DidYouGetIt_2025-05-21_01-50-30.mov
+✓ Successfully created empty placeholder file at /Users/adam/Movies/DidYouGetIt_
+2025-05-21_01-50-30/DidYouGetIt_2025-05-21_01-50-30.mov
+✓ Video asset writer created successfully, initial status: 0
+WARNING: AVAssetWriter did not immediately create file on disk
+Configuring video input settings
+Using video quality: High with bitrate: 20 Mbps
+VIDEO CONFIG: Width=1920, Height=1080, BitRate=20Mbps, FrameRate=60
+DEBUG_VP: Attempting to create AVAssetWriterInput...
+DEBUG_VP: AVAssetWriterInput creation attempted (videoInput is not nil).
+DEBUG_VP: Checking if writer can add videoInput...
+DEBUG_VP: Writer can add videoInput. Attempting to add...
+DEBUG_VP: writer.add(videoInput) executed.
+DEBUG_VP: Attempting to return from setupVideoWriter...
+DEBUG: Returned from videoProcessor.setupVideoWriter successfully.
+DEBUG: Checking audio preferences...
+DEBUG: Audio recording is DISABLED in preferences.
+DEBUG: Finished checking audio preferences.
+Attempting to start video writer...
+Starting video asset writer...
+VideoWriter.startWriting() returned true
+✓ Video writer started successfully, status: 1
+✓ Video writer started.
+Attempting to create SCStream...
+Creating SCStream with configured filter and settings
+SCStreamFrameOutput initialized - ready to receive frames
+Screen capture output added successfully (using custom SCStreamFrameOutput)
+✓ SCStream created.
+Attempting to start video/audio processor sessions...
+Starting video writer session at time: 0.0...
+✓ Video writer session started successfully
+✓ Video file already exists at path
+✓ Video/audio processor sessions started.
+Attempting to run timer setup on MainActor...
+Inside MainActor.run for timer setup.
+Saved recording start time to UserDefaults: 2025-05-20 23:50:31 +0000
+Starting recording timer at: 2025-05-20 23:50:31 +0000
+Setting immediate startTime to 2025-05-20 23:50:31 +0000
+Setting initial recordingDuration to 0
+Creating timer with captured startTime 2025-05-20 23:50:31 +0000
+✓ Dispatch timer created and activated
+✓ Timer successfully initialized and started
+✓ Timer setup block completed.
+Attempting to start capture session (captureSessionManager.startCapture())...
+Starting SCStream capture...
+Forcing UI refresh for timer
+TIMER UPDATE: Recording duration = 0.017193913459777832 seconds
+Saved duration 0.017193913459777832 to UserDefaults
+SCStream capture started successfully
+✓ Capture session started.
+Attempting to start input tracking...
+Accessibility permission status: Granted
+Mouse tracking enabled, URL: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-50-30/
+DidYouGetIt_2025-05-21_01-50-30_mouse.json
+Starting mouse tracking
+Keyboard tracking enabled, URL: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-50-
+30/DidYouGetIt_2025-05-21_01-50-30_keyboard.json
+Starting keyboard tracking
+✓ Input tracking started or skipped.
+Recording started successfully
+TIMER UPDATE: Recording duration = 0.1613309383392334 seconds
+Saved duration 0.1613309383392334 to UserDefaults
+TIMER UPDATE: Recording duration = 0.20413601398468018 seconds
+Saved duration 0.20413601398468018 to UserDefaults
+TIMER UPDATE: Recording duration = 0.3013789653778076 seconds
+Saved duration 0.3013789653778076 to UserDefaults
+TIMER UPDATE: Recording duration = 0.4010549783706665 seconds
+Saved duration 0.4010549783706665 to UserDefaults
+TIMER UPDATE: Recording duration = 0.5006020069122314 seconds
+Saved duration 0.5006020069122314 to UserDefaults
+TIMER UPDATE: Recording duration = 0.600600004196167 seconds
+Saved duration 0.600600004196167 to UserDefaults
+TIMER UPDATE: Recording duration = 0.7043049335479736 seconds
+Saved duration 0.7043049335479736 to UserDefaults
+TIMER UPDATE: Recording duration = 0.8019520044326782 seconds
+Saved duration 0.8019520044326782 to UserDefaults
+TIMER UPDATE: Recording duration = 0.9003589153289795 seconds
+Saved duration 0.9003589153289795 to UserDefaults
+TIMER UPDATE: Recording duration = 2.0043139457702637 seconds
+TIMER UPDATE: Recording duration = 2.1005959510803223 seconds
+TIMER UPDATE: Recording duration = 2.2006369829177856 seconds
+TIMER UPDATE: Recording duration = 2.3009449243545532 seconds
+TIMER UPDATE: Recording duration = 2.400715947151184 seconds
+TIMER UPDATE: Recording duration = 2.5043100118637085 seconds
+TIMER UPDATE: Recording duration = 2.6043570041656494 seconds
+TIMER UPDATE: Recording duration = 2.7006269693374634 seconds
+TIMER UPDATE: Recording duration = 2.800413966178894 seconds
+TIMER UPDATE: Recording duration = 2.9006320238113403 seconds
+Stop button clicked - requesting stop via RecordingManager
+Stop recording requested via stopRecording()
+
+=== STOPPING RECORDING (INTERNAL) ===
+
+Setting isRecording = false
+Cancelling dispatch timer
+Explicitly setting recordingDuration to 0 for UI update.
+Stopping input tracking
+Mouse tracking data saved to: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-50-30
+/DidYouGetIt_2025-05-21_01-50-30_mouse.json
+Keyboard tracking data saved to: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-50
+-30/DidYouGetIt_2025-05-21_01-50-30_keyboard.json
+Stopping capture session
+Stopping SCStream capture...
+Stream capture stopped successfully
+Waiting for buffers to flush (0.5s delay)...
+Finalizing recording files
+Finalizing video file...
+PRE-FINALIZE VIDEO FILE SIZE: 0 bytes
+CRITICAL WARNING: Video file is empty (0 bytes) before finalization!
+WRITER STATE DUMP:
+  - Status: 1
+  - Error: nil
+  - Video frames processed: 0
+Marking video input as finished
+Video successfully finalized
+POST-FINALIZE VIDEO FILE SIZE: 0 bytes
+Removed zero-length video file at /Users/adam/Movies/DidYouGetIt_2025-05-21_01-5
+0-30/DidYouGetIt_2025-05-21_01-50-30.mov
+INFO: No separate audio writer to finalize
+
+=== RECORDING DIAGNOSTICS ===
+
+Video frames processed: 0
+Audio samples processed: 0
+Checking Video file: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-50-30/DidYouGe
+tIt_2025-05-21_01-50-30.mov
+ERROR: Video file not found at expected location: /Users/adam/Movies/DidYouGetIt
+_2025-05-21_01-50-30/DidYouGetIt_2025-05-21_01-50-30.mov
+Checking Mouse tracking file: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-50-30
+/DidYouGetIt_2025-05-21_01-50-30_mouse.json
+Mouse tracking file size: 18239 bytes
+✓ Mouse tracking file successfully saved with size: 18239 bytes
+Mouse tracking file created at: 2025-05-20 23:50:32 +0000
+Checking Keyboard tracking file: /Users/adam/Movies/DidYouGetIt_2025-05-21_01-50
+-30/DidYouGetIt_2025-05-21_01-50-30_keyboard.json
+Keyboard tracking file size: 108 bytes
+✓ Keyboard tracking file successfully saved with size: 108 bytes
+Keyboard tracking file created at: 2025-05-20 23:50:32 +0000
+Recording stopped successfully (Internal)
+stopRecordingAsyncInternal completed successfully.
+Proceeding to forceFullReset() after stop attempt.
+EMERGENCY: Forcing immediate reset of all recording state
+Emergency reset complete - all state variables cleared
+stopRecording() finished. UI should reflect stopped state.
+
+```
+
+---
+
+No change. Setting the `SCStream` delegate to `nil` did not resolve the issue. The log is identical to the previous one regarding frame delivery – the line `<<<< FRAME RECEIVED BY SCStreamFrameOutput (custom class) - Type: screen >>>>` is **still missing**.
+
+This means the problem of `SCStream` not delivering frames is not related to our delegate implementation.
+
+The next step from my previous plan was to simplify the `SCStreamConfiguration` for the main capture to be as close as possible to the dummy capture's configuration, which *does* receive a frame.
+
+**Current Main Capture Configuration (forced 1920x1080):**
+- `scConfig.width = 1920`
+- `scConfig.height = 1080`
+- `scConfig.queueDepth = 5`
+- `scConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(60))` (60fps)
+- `scConfig.pixelFormat = kCVPixelFormatType_32BGRA`
+- `scConfig.scalesToFit = true`
+- `scConfig.preservesAspectRatio = true` (macOS 14+)
+- `scConfig.capturesAudio = false` (as per current settings)
+
+**Dummy Capture Configuration:**
+- `dummyConfig.width = 320`
+- `dummyConfig.height = 240`
+- `dummyConfig.minimumFrameInterval = CMTime(value: 1, timescale: 5)` (5fps)
+- `dummyConfig.queueDepth = 1`
+- No explicit `pixelFormat` (uses default)
+- No explicit `scalesToFit` (uses default)
+- No explicit `preservesAspectRatio` (uses default)
+- No audio capture.
+
+**Plan:**
+In `CaptureSessionManager.configureCaptureSession` for the `.display` case:
+1.  Revert the delegate change (set it back to `self` for `SCStream` because we want error callbacks if they ever occur).
+2.  Modify `scConfig` to more closely match the dummy config:
+    *   Keep `width = 1920`, `height = 1080` for now (as this was our test variable).
+    *   Change `scConfig.queueDepth = 1`.
+    *   Change `scConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(5))` (test 5fps).
+    *   Comment out `scConfig.pixelFormat = kCVPixelFormatType_32BGRA`.
+    *   Comment out `scConfig.scalesToFit = true`.
+    *   Comment out `scConfig.preservesAspectRatio = ...`.
+3.  Run `./run.sh`.
+
+First, revert the delegate and apply the configuration simplifications.
+
+---
+
+```diff
+          self.streamConfig = scConfig // Store for later use
+          
+-         scConfig.queueDepth = 5 // Increase queue depth for smoother capture
++         // scConfig.queueDepth = 5 // Increase queue depth for smoother capture - Using dummy_config value
++         scConfig.queueDepth = 1 // Match dummy config
+          
+-         // Set initial dimensions to HD as default
+-         scConfig.width = 1920
+-         scConfig.height = 1080
++         // Set initial dimensions to HD as default - Will be overridden by display case
++         // scConfig.width = 1920
++         // scConfig.height = 1080
+          
+-         // Set frame rate based on preferences
+-         print("Setting frame rate to \(frameRate) FPS")
+-         scConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(frameRate))
++         // Set frame rate based on preferences - Using dummy_config value
++         // print("Setting frame rate to \(frameRate) FPS")
++         // scConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(frameRate))
++         scConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(5)) // Match dummy config (5 FPS)
++         print("TEST: Setting frame rate to 5 FPS")
+  
+-         // Configure pixel format (BGRA is standard for macOS screen capture)
+-         scConfig.pixelFormat = kCVPixelFormatType_32BGRA
+-         scConfig.scalesToFit = true
++         // Configure pixel format (BGRA is standard for macOS screen capture) - Using dummy_config default
++         // scConfig.pixelFormat = kCVPixelFormatType_32BGRA
++         print("TEST: Using default pixel format")
++ 
++         // scConfig.scalesToFit = true // - Using dummy_config default
++         print("TEST: Using default scalesToFit")
+          
+-         // Set aspect ratio preservation if available
+-         if #available(macOS 14.0, *) {
+-             scConfig.preservesAspectRatio = true
+-             print("Aspect ratio preservation enabled (macOS 14+)")
+-         } else {
+-             print("Aspect ratio preservation not available (requires macOS 14+)")
+-         }
++         // Set aspect ratio preservation if available - Using dummy_config default
++         // if #available(macOS 14.0, *) {
++         //     scConfig.preservesAspectRatio = true
++         //     print("Aspect ratio preservation enabled (macOS 14+)")
++         // } else {
++         //     print("Aspect ratio preservation not available (requires macOS 14+)")
++         // }
++         print("TEST: Using default preservesAspectRatio")
+          
+          // Configure audio capture if needed
+```
+
+```diff
+              // print("Capturing display \(display.displayID) at \(screenWidth * scale) x \(screenHeight * scale) (with Retina scaling)")
+  
+-             // FORCED TEST RESOLUTION
++             // FORCED TEST RESOLUTION (Still keeping this part)
+              scConfig.width = 1920 
+              scConfig.height = 1080
+```
+
+```diff
+  
+          print("Creating SCStream with configured filter and settings")
+-         captureSession = SCStream(filter: filter, configuration: config, delegate: nil)
++         captureSession = SCStream(filter: filter, configuration: config, delegate: self) // Reverted delegate to self
+          
+          guard let stream = captureSession else {
+```
+
+---
+
+The `SCStreamConfiguration` has been simplified in `CaptureSessionManager.configureCaptureSession` to more closely match the dummy capture settings (queueDepth=1, 5fps, default pixelFormat, etc.), while keeping the 1920x1080 resolution for the test. The `SCStream` delegate in `createStream` has been reverted to `self`.
+
+Now, let's run the application again. We are still looking for the `<<<< FRAME RECEIVED BY SCStreamFrameOutput (custom class) - Type: screen >>>>` log. If it appears with these simplified settings, it will give us a strong clue.The `SCStream` delegate has been set back to `self` (the `CaptureSessionManager` instance), and the `SCStreamConfiguration` for display capture has been significantly simplified to more closely resemble the settings used in the `addDummyCapture()` function (which successfully receives a frame). We're now testing with 1920x1080 resolution, 5 FPS, queue depth of 1, and default settings for pixel format, scaling, and aspect ratio.
+
+Please run `./run.sh`. The key log message we're hoping to see is:
+`<<<< FRAME RECEIVED BY SCStreamFrameOutput (custom class) - Type: screen >>>>`
+
+If this appears, it suggests one of the more complex configuration settings (higher frame rate, specific pixel format, deeper queue, or Retina scaling) was preventing frame delivery. If it still doesn't appear, the issue is more stubborn.
+
+---
+
+_**User**_
+
+./run.sh
+
+---
+
+_**Assistant**_
 
 
 
