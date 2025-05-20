@@ -74,22 +74,37 @@ class RecordingManager: ObservableObject {
     
     class SCStreamFrameOutput: NSObject, SCStreamOutput {
         private let handler: (CMSampleBuffer, SCStreamType) -> Void
+        private var screenFrameCount = 0
+        private var audioSampleCount = 0
         
         init(handler: @escaping (CMSampleBuffer, SCStreamType) -> Void) {
             self.handler = handler
             super.init()
+            print("SCStreamFrameOutput initialized - ready to receive frames")
         }
         
         func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
             switch type {
             case .screen:
-                print("SCStream output: Received screen frame")
+                screenFrameCount += 1
+                // Only log occasionally to prevent console flooding
+                if screenFrameCount == 1 || screenFrameCount % 300 == 0 {
+                    print("SCStream output: Received screen frame #\(screenFrameCount)")
+                }
                 handler(sampleBuffer, .screen)
             case .audio:
-                print("SCStream output: Received audio sample")
+                audioSampleCount += 1
+                // Only log occasionally to prevent console flooding
+                if audioSampleCount == 1 || audioSampleCount % 300 == 0 {
+                    print("SCStream output: Received audio sample #\(audioSampleCount)")
+                }
                 handler(sampleBuffer, .audio)
             case .microphone:
-                print("SCStream output: Received microphone sample")
+                audioSampleCount += 1
+                // Only log occasionally to prevent console flooding
+                if audioSampleCount == 1 || audioSampleCount % 300 == 0 {
+                    print("SCStream output: Received microphone sample #\(audioSampleCount)")
+                }
                 handler(sampleBuffer, .audio)
             @unknown default:
                 print("SCStream output: Received unknown type \(type)")
@@ -263,6 +278,10 @@ class RecordingManager: ObservableObject {
         audioSamplesProcessed = 0
 
         do {
+            // Set recording state to true BEFORE setting up capture session
+            // This ensures that any frames that come in during setup will be processed
+            isRecording = true
+            
             // Set up capture session with comprehensive error handling
             print("Setting up capture session")
             try await setupCaptureSession()
@@ -297,9 +316,6 @@ class RecordingManager: ObservableObject {
             // Start input tracking if enabled
             print("Starting input tracking")
             startInputTracking()
-
-            // Set recording state to true ONLY after all setup is complete
-            isRecording = true
 
             print("Recording started successfully")
         } catch {
@@ -878,19 +894,22 @@ class RecordingManager: ObservableObject {
                 return 
             }
             
+            // Important: Don't check isRecording here since this is called before 
+            // isRecording is set to true in the startRecordingAsync method
             if self.isPaused {
                 print("Recording is paused, skipping frame processing")
                 return
             }
             
-            // Use Task to dispatch back to the main actor
-            Task { @MainActor in
+            // Use Task with high priority to dispatch back to the main actor
+            // This is critical for handling frames in real-time
+            Task(priority: .userInitiated) { @MainActor in
                 switch type {
                 case .screen:
-                    print("Processing screen frame")
+                    // Process screen frames immediately
                     self.processSampleBuffer(sampleBuffer)
                 case .audio:
-                    print("Processing audio sample")
+                    // Process audio samples immediately
                     self.processAudioSampleBuffer(sampleBuffer)
                 @unknown default:
                     print("Unknown sample type, cannot process")
@@ -958,17 +977,22 @@ class RecordingManager: ObservableObject {
         // Debug logging to track frequency of frame arrivals
         videoFrameLogCounter += 1
         
-        // Log every 60th frame to avoid flooding console
-        let shouldLogDetail = (videoFrameLogCounter % 60 == 1)
+        // Log only the first frame and then occasionally to avoid flooding console
+        let shouldLogDetail = videoFrameLogCounter == 1 || videoFrameLogCounter % 300 == 0
         
         if shouldLogDetail {
-            print("VIDEO FRAME: Received frame #\(videoFrameLogCounter)")
+            print("VIDEO FRAME: Processing frame #\(videoFrameLogCounter)")
         }
         
-        // Completely skip processing if we're paused or not recording
-        guard isRecording && !isPaused else {
+        // For the SCStream handler that runs before recording is formally started
+        // we should NOT check isRecording flag here since the frames might arrive
+        // before isRecording is set to true in the UI but after the asset writer
+        // has been initialized
+        
+        // Only skip if explicitly paused
+        if isPaused {
             if shouldLogDetail {
-                print("VIDEO FRAME: Skipping - not recording or paused")
+                print("VIDEO FRAME: Skipping - recording is paused")
             }
             return
         }
@@ -1067,17 +1091,22 @@ class RecordingManager: ObservableObject {
         // Debug logging to track frequency of audio samples
         audioSampleLogCounter += 1
         
-        // Log every 100th sample to avoid flooding console
-        let shouldLogDetail = (audioSampleLogCounter % 100 == 1)
+        // Log only the first sample and then occasionally to avoid flooding console
+        let shouldLogDetail = audioSampleLogCounter == 1 || audioSampleLogCounter % 300 == 0
         
         if shouldLogDetail {
-            print("AUDIO SAMPLE: Received sample #\(audioSampleLogCounter)")
+            print("AUDIO SAMPLE: Processing sample #\(audioSampleLogCounter)")
         }
         
-        // Skip processing if paused or not recording
-        guard isRecording && !isPaused else {
+        // For the SCStream handler that runs before recording is formally started
+        // we should NOT check isRecording flag here since the samples might arrive
+        // before isRecording is set to true in the UI but after the asset writer
+        // has been initialized
+        
+        // Only skip if explicitly paused
+        if isPaused {
             if shouldLogDetail {
-                print("AUDIO SAMPLE: Skipping - not recording or paused")
+                print("AUDIO SAMPLE: Skipping - recording is paused")
             }
             return
         }

@@ -313,23 +313,38 @@
 - Fixed issues with input tracking JSON files not being created correctly
 - Added comprehensive file verification checks after recording completes
 - Improved error handling in sample buffer processing
+- Fixed recording state persistence when app UI is hidden and shown again
+- Fixed video recording to ensure MOV files are properly created and contain data
+- Improved frame processing in SCStream handler to ensure frames are captured correctly
+- Enhanced stream handler to better process video frames with high priority tasks
 
 ### Current Issues Fixed
 
 1. **Empty .mov files** - Fixed issues in the video capture pipeline that were causing empty video files
-2. **Missing JSON files** - Enhanced input tracking initialization, file creation, and error handling
-3. **File verification** - Added more robust checks to verify file existence and contents after recording
-4. **Improved logging** - Added comprehensive logging throughout the recording process for better diagnostics
-5. **Preferences handling** - Fixed issues where preferences weren't correctly accessed during recording
-6. **Stream output handling** - Enhanced frame and sample buffer processing to properly handle video and audio
+   - Set isRecording flag before capture session setup to ensure frames are processed
+   - Removed isRecording check in processSampleBuffer to ensure frames are captured during initialization
+   - Enhanced frame processing with high priority task dispatching
+
+2. **Recording state persistence** - Fixed issue where recording state wasn't maintained when app UI is hidden/shown
+   - Modified ContentView's onAppear behavior to check if recording is active before resetting state
+   - Ensured recording continues properly when UI is hidden and then shown again
+
+3. **Frame processing in SCStream handler** - Improved frame processing to ensure proper video capture
+   - Added frame counter to SCStreamFrameOutput to better monitor frame reception
+   - Improved task priority for frame processing to ensure real-time handling
+   - Enhanced logging throughout the recording pipeline for better diagnostics
+
+4. **Missing JSON files** - Enhanced input tracking initialization, file creation, and error handling
+5. **File verification** - Added more robust checks to verify file existence and contents after recording
+6. **Preferences handling** - Fixed issues where preferences weren't correctly accessed during recording 
 7. **Recording state bug** - Fixed issue where recording state wasn't set after starting, causing timer and output files to fail
 
 ### Known Issues
 
 - ~~FIXED: App UI freezes when clicking "Record"; the app becomes unresponsive and must be force quit.~~
 - ~~FIXED: When clicking Record then Stop, the timer never starts and no MOV or JSON files are produced.~~
-- FIXME: Recording produces empty .mov files (0 bytes) even though the JSON files for mouse and keyboard tracking are created correctly
-- FIXME: Recording state isn't maintained when the app UI is closed and reopened (menu bar item remains)
+- ~~FIXED: Recording produces empty .mov files (0 bytes) even though the JSON files for mouse and keyboard tracking are created correctly~~
+- ~~FIXED: Recording state isn't maintained when the app UI is closed and reopened (menu bar item remains)~~
 
 ### Next Steps
 

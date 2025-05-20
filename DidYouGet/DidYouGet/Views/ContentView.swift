@@ -368,10 +368,18 @@ struct ContentView: View {
                 hasAppeared = true
             }
             
-            // Reset recording state when view appears
+            // Only check recording state when view appears, but don't reset it
             Task {
-                print("Resetting recording state from ContentView onAppear")
-                await recordingManager.resetRecordingState()
+                print("ContentView onAppear - checking recording state")
+                // Don't reset recording state, as it would stop any active recording
+                // Just ensure the UI reflects the current state
+                if !recordingManager.isRecording {
+                    // Only reset if we're not currently recording
+                    print("Not currently recording, safe to reset state")
+                    await recordingManager.resetRecordingState()
+                } else {
+                    print("Recording is active, preserving state")
+                }
             }
         }
     }
