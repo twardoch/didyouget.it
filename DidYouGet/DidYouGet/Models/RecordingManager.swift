@@ -528,6 +528,11 @@ class RecordingManager: ObservableObject {
             shouldHaveMouse: preferences?.recordMouseMovements == true,
             shouldHaveKeyboard: preferences?.recordKeystrokes == true
         )
+
+        // Remove recording directory if no files were produced
+        if let folder = videoOutputURL?.deletingLastPathComponent() {
+            OutputFileManager.cleanupFolderIfEmpty(folder)
+        }
         
         print("Recording stopped successfully")
         

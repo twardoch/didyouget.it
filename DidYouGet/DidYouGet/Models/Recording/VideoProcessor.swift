@@ -505,6 +505,10 @@ class VideoProcessor {
                     let attrs = try fileManager.attributesOfItem(atPath: outputURL.path)
                     if let fileSize = attrs[.size] as? UInt64 {
                         print("POST-FINALIZE VIDEO FILE SIZE: \(fileSize) bytes")
+                        if fileSize == 0 {
+                            try? fileManager.removeItem(at: outputURL)
+                            print("Removed zero-length video file at \(outputURL.path)")
+                        }
                     }
                 }
             } catch {

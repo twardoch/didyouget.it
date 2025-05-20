@@ -2,6 +2,11 @@
 
 ## Phase 0: Address `TODO.md`
 
+- [x] Timer now starts properly when recording begins
+- [x] Stop button correctly reverts to Record after stopping
+- [x] Recording directories are cleaned if no files are produced
+- [x] Zero-length video files are removed after finalization
+
 ## Phase 1: Project Setup & Core Infrastructure
 
 ### Environment Setup
@@ -318,6 +323,7 @@
 - Added comprehensive file verification checks after recording completes
 - Improved error handling in sample buffer processing
 - Fixed recording state persistence when app UI is hidden and shown again
+- Implemented automatic cleanup of empty recording folders and removal of zero-length video files
 - Fixed video recording to ensure MOV files are properly created and contain data
 - Improved frame processing in SCStream handler to ensure frames are captured correctly
 - Enhanced stream handler to better process video frames with high priority tasks

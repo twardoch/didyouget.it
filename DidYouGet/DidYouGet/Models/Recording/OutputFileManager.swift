@@ -168,4 +168,23 @@ class OutputFileManager {
             }
         }
     }
+
+    /// Remove the recording folder if it contains no visible files.
+    static func cleanupFolderIfEmpty(_ folderURL: URL) {
+        do {
+            let contents = try FileManager.default.contentsOfDirectory(at: folderURL,
+                                                                      includingPropertiesForKeys: [.isRegularFileKey],
+                                                                      options: [.skipsHiddenFiles])
+            let regularFiles = contents.filter { url in
+                (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+            }
+
+            if regularFiles.isEmpty {
+                try FileManager.default.removeItem(at: folderURL)
+                print("Removed empty recording directory: \(folderURL.path)")
+            }
+        } catch {
+            print("WARNING: Failed to clean up folder \(folderURL.path): \(error)")
+        }
+    }
 }
