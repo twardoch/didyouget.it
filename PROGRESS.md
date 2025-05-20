@@ -1,5 +1,7 @@
 # Did You Get It - Implementation Progress
 
+## Phase 0: Address `TODO.md`
+
 ## Phase 1: Project Setup & Core Infrastructure
 
 ### Environment Setup
@@ -324,8 +326,10 @@
 
 ### Known Issues
 
-- FIXME: App UI freezes when clicking "Record"; the app becomes unresponsive and must be force quit.
-- When clicking Record then Stop, the timer never starts and no MOV or JSON files are produced.
+- ~~FIXED: App UI freezes when clicking "Record"; the app becomes unresponsive and must be force quit.~~
+- ~~FIXED: When clicking Record then Stop, the timer never starts and no MOV or JSON files are produced.~~
+- FIXME: Recording produces empty .mov files (0 bytes) even though the JSON files for mouse and keyboard tracking are created correctly
+- FIXME: Recording state isn't maintained when the app UI is closed and reopened (menu bar item remains)
 
 ### Next Steps
 

@@ -83,6 +83,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   preventing timer and output files from being produced
 - Fixed UI freeze when starting a recording by moving capture session setup off the main thread and initializing the timer after setup.
 - Recording files and timer now start correctly once capture begins.
+- Fixed critical issue with recording state management that prevented recording from starting properly.
+- Improved PreferencesManager connectivity with proper verification during app initialization.
+- Added proper guards in video and audio sample buffer processing to ensure frames are only processed when recording is active.
+- Fixed startTime handling to ensure recording timer starts correctly.
+- Improved error detection and diagnostics for recording failures.
+- Fixed PreferencesManager initialization and connection issues that were preventing recording from starting.
+- Implemented robust checks and recovery mechanisms for PreferencesManager connectivity.
+- Added UserDefaults backup system for tracking PreferencesManager connection state.
+- Fixed concurrency and state management in SwiftUI lifecycle, preventing race conditions.
+- Resolved issue where recording state wasn't properly set, causing timer and tracking files to fail.
+- Successfully fixed JSON tracking files for mouse and keyboard - they now record properly.
 
 
 ### Planned

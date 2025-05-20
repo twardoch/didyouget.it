@@ -1,33 +1,26 @@
 ---
-description: Handles resolution of @ references and context-specific inclusions within recording operations
-globs: **/*.swift,**/*.swift
+description: Reference-resolution system for managing and tracking linked content and context-specific inclusions
+globs: ./**/*
 alwaysApply: false
 ---
 
 
 # reference-resolution
 
-Based on the provided specification, there is a basic reference resolution system in place for screen recordings:
+Based on the provided specification, there is no explicit implementation or documentation of a reference resolution system or @ references. The specification appears to focus on screen recording, input tracking, and media capture functionality without mentioning any reference management or linking capabilities.
 
-Core Reference Components:
+The project structure includes:
 
-1. Session Reference Tracking:
-- Each recording session generates a unique identifier 
-- Uses timestamp-based references in format: DidYouGet_YYYY-MM-DD_HH-MM-SS
-- Recording Manager maintains contextual links between active captures and reference IDs
+- Documentation files (README.md, SPEC.md, PROGRESS.md, CHANGELOG.md, TODO.md)
+- Source code organization
+- Build configuration
 
-2. Input Source References:
-- Maps device references to corresponding input streams
-- Associates audio input channels with specific recording sessions
-- Links mouse/keyboard capture events to their parent recording context
+However, there is no indication of:
+- Link management systems
+- Cross-reference handling
+- Content resolution mechanisms
+- Context-aware inclusion processing
 
-Importance Scores:
-- Session Reference Management: 85 - Critical for maintaining recording context
-- Input Reference Resolution: 75 - Essential for input source mapping
-- Timestamp Reference System: 65 - Supports unique identification
-
-Relevant Files:
-- DidYouGet/DidYouGet/Models/RecordingManager.swift
-- DidYouGet/DidYouGet/Models/PreferencesManager.swift
+The specification focuses entirely on recording functionality and does not cover reference resolution aspects of the application.
 
 $END$

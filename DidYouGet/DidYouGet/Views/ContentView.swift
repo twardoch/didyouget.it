@@ -6,6 +6,9 @@ struct ContentView: View {
     @EnvironmentObject var recordingManager: RecordingManager
     @EnvironmentObject var preferencesManager: PreferencesManager
     
+    // Track whether view has appeared
+    @State private var hasAppeared = false
+    
     var body: some View {
         VStack(spacing: 16) {
             // Recording status and main control
@@ -35,11 +38,25 @@ struct ContentView: View {
                 // Primary control button - more compact and visually distinct
                 if !recordingManager.isRecording {
                     Button(action: {
-                        // Use a detached Task to avoid blocking the UI thread
+                        // Ensure preferences manager is set before starting recording
+                        // This is a critical check as we've seen this issue multiple times
+                        print("Record button clicked - first ensuring PreferencesManager is connected")
+                        recordingManager.setPreferencesManager(preferencesManager)
+                        
+                        // Double-check after setting
+                        if recordingManager.getPreferencesManager() == nil {
+                            print("CRITICAL ERROR: PreferencesManager is still nil after explicit setting")
+                            recordingManager.showAlert(title: "Recording Error", 
+                                                     message: "Cannot start recording: preferences manager is not available. Please restart the application.")
+                            return
+                        }
+                        
+                        print("PreferencesManager confirmed connected, starting recording")
+                        
                         // Use Task with user initiated priority for recording operation
                         Task(priority: .userInitiated) {
                             do {
-                                // Start the actual recording process on the main actor
+                                // Start the actual recording process
                                 // The RecordingManager will handle setting isRecording once setup is complete
                                 try await recordingManager.startRecordingAsync()
                             } catch {
@@ -344,8 +361,16 @@ struct ContentView: View {
         .padding(.vertical, 16)
         .background(Color(.windowBackgroundColor))
         .onAppear {
+            // First, ensure that the PreferencesManager is set
+            if !hasAppeared {
+                print("ContentView appeared - ensuring PreferencesManager is connected")
+                recordingManager.setPreferencesManager(preferencesManager)
+                hasAppeared = true
+            }
+            
             // Reset recording state when view appears
             Task {
+                print("Resetting recording state from ContentView onAppear")
                 await recordingManager.resetRecordingState()
             }
         }

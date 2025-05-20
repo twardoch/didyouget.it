@@ -8,11 +8,18 @@ struct DidYouGetApp: App {
     @StateObject private var preferencesManager = PreferencesManager()
     
     init() {
-        // Connect the managers
+        // Debug output
+        print("=== APPLICATION INITIALIZATION ===")
+        print("Application starting up. macOS Version: \(ProcessInfo.processInfo.operatingSystemVersionString)")
+        
+        // Connect the managers (essential for recording)
         recordingManager.setPreferencesManager(preferencesManager)
         
-        // Debug output
-        print("Application starting up. macOS Version: \(ProcessInfo.processInfo.operatingSystemVersionString)")
+        if let _ = recordingManager.preferencesManager {
+            print("PreferencesManager successfully connected to RecordingManager during app init")
+        } else {
+            print("WARNING: PreferencesManager not connected to RecordingManager during app init")
+        }
     }
     
     var body: some Scene {

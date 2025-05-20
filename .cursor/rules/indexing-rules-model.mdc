@@ -1,35 +1,50 @@
 ---
-description: Defines pattern matching rules and indexing behavior for video recording file management
-globs: .cursorindexingignore,Models/*.swift,Views/*.swift
+description: Defines rules and patterns for file indexing and content organization in the screen recording application
+globs: .cursorignore,.cursorindexingignore,**/*.swift,**/*.md
 alwaysApply: false
 ---
 
 
 # indexing-rules-model
 
-The indexing rules model implements the file organization and pattern matching system for recorded video content.
+The indexing rules model specifies file organization patterns relevant to the screen recording functionality:
 
-Core Indexing Components:
+Recording Data Organization:
+- Screen capture streams indexed by display identifier
+- Input tracking files organized by session timestamps
+- Audio capture streams cataloged by device ID
 
-1. Recording Output Pattern Structure:
-- Enforces "DidYouGet_YYYY-MM-DD_HH-MM-SS" naming convention
-- Groups recordings by capture mode (full display/window/area)
-- Maintains metadata association between recordings and preferences
+File Structure Rules:
+Separate indexing for:
+- Video recording segments
+- Mouse/keyboard event logs in JSON format
+- Audio stream components
+- Mixed media output files
 
-2. Video Organization Rules:
-- Organizes recordings based on quality tier categories 
-- Auto-categorizes files by input type (screen-only vs screen+audio)
-- Maintains temporal grouping of related recording segments
+Format Rules:
+1. Screen Recording Index
+- Resolution and FPS metadata
+- Display identifier mapping
+- Capture area coordinates
 
-Business Rule Importance Scores:
+2. Input Tracking Index
+- Mouse event categorization (click/hold/drag)
+- Keyboard event classification (tap/hold)
+- Timestamp-based correlation
 
-90 - Recording naming pattern enforcement
-85 - Quality-based categorization
-75 - Input type organization
-70 - Temporal grouping rules
+3. Audio Stream Index
+- Device mapping
+- Stream synchronization markers
+- Mixed vs. separate output flags
 
-Relevant Files:
-- `DidYouGet/DidYouGet/Models/RecordingManager.swift`
-- `DidYouGet/DidYouGet/Models/PreferencesManager.swift`
+Importance Scores:
+- Recording Data Organization: 85 (Key integration structure)
+- Format Rules: 75 (Critical for data correlation)
+- File Structure Rules: 65 (Supporting organization)
+
+File Paths:
+/.cursorignore
+/.cursorindexingignore
+/DidYouGet/Models/RecordingManager.swift
 
 $END$

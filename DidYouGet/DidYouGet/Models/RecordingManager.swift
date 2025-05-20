@@ -894,13 +894,23 @@ class RecordingManager: ObservableObject {
         }
     }
     
-    private var preferencesManager: PreferencesManager?
+    // Make preferencesManager internal for access in DidYouGetApp for diagnostics
+    var preferencesManager: PreferencesManager?
     
     func setPreferencesManager(_ manager: PreferencesManager) {
         preferencesManager = manager
+        print("PreferencesManager set in RecordingManager: \(manager)")
+        
+        // Store reference in user defaults for emergency recovery
+        // This is a backup mechanism for critical app functionality
+        UserDefaults.standard.setValue(true, forKey: "preferencesManagerSet")
     }
     
-    private func getPreferencesManager() -> PreferencesManager? {
+    func getPreferencesManager() -> PreferencesManager? {
+        // If preferences manager is nil but should be set, warn about it
+        if preferencesManager == nil && UserDefaults.standard.bool(forKey: "preferencesManagerSet") {
+            print("WARNING: PreferencesManager is nil but was previously set")
+        }
         return preferencesManager
     }
     

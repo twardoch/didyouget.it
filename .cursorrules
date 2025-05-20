@@ -1,5 +1,4 @@
 
-
 # Project
 
 I want a fast performant app `Did You Get It` (Mac identifier it.didyouget.mac, homepage https://didyouget.it ) that will run on macOS with extremely minimal user interface, and will let me: 
@@ -16,14 +15,22 @@ I want a fast performant app `Did You Get It` (Mac identifier it.didyouget.mac, 
 - `SPEC.md` contains the detailed specification. Check it, make sure you understand it, and then start working.
 - `PROGRESS.md` contains the plan and uses `[ ]` vs. `[x]` items to track the progress. Keep it updated as you work.
 - `CHANGELOG.md` contains the changelog. Keep updated as you work
+- `TODO.md` contains the highest-priority issues that you have to prioritize. Keep updated as you work.
 
+## Operation
 
+As you work: 
+
+- Consult TODO.md for highest-priority issues and fix them. Update the file as you work.
+- Consult PROGRESS.md for additional issues and fix them. Update the file as you work.
+- Keep the CHANGELOG.md updated as you work.
+- After you make a change, perform `./run.sh debug` on macOS to build and run the app in debug mode, and observer the console output for any issues.
 
 
 START SPECIFICATION:
 ---
-description: Documentation for screen recording applications focusing on core capture logic, recording configuration, and input handling. Apply when documenting main recording functionality and user preference management.
-globs: *.swift,Models/*.swift,Views/*.swift
+description: Apply when documenting high-level business architecture for screen recording applications with synchronized input tracking and media capture capabilities
+globs: *.swift,*.md
 alwaysApply: false
 ---
 
@@ -39,30 +46,52 @@ alwaysApply: false
 - Explain your OBSERVATIONS clearly, then provide REASONING to identify the exact issue. Add console logs when needed to gather more information.
 
 
-The DidYouGet application implements screen recording functionality with configurable capture modes and preferences management.
+"Did You Get It" (didyouget.it) is a macOS screen recording system with synchronized input tracking and media capture capabilities.
 
-Core Components:
+Core Business Components:
 
-1. Recording Management (Importance: 95)
-- Supports full display, window, and custom area capture modes
-- Real-time screen and audio capture with sync capabilities
-- Track and manage recording states and duration
-Location: DidYouGet/DidYouGet/Models/RecordingManager.swift
+1. Screen Recording Engine
+- Configurable area capture with Retina resolution at 60 FPS
+- Multi-display support with selective recording zones
+- Full resolution capture with dynamic scaling
 
-2. Recording Configuration (Importance: 85)
-- Quality tier management (low/medium/high/lossless)
-- Input tracking configuration for mouse and keyboard
-- Audio source selection and management
-- Output file naming conventions
-Location: DidYouGet/DidYouGet/Models/PreferencesManager.swift
+2. Input Tracking System
+- Synchronized mouse tracking with movement paths
+- Click vs. hold-release detection
+- Keyboard event capture with modifier key support
+- JSON-formatted input data with timing information
 
-3. Input Control System (Importance: 80)
-- Mouse movement and click simulation
-- Keyboard shortcut handling
-- Directional scrolling control
-- Coordinate-based cursor positioning
+3. Audio Integration
+- Selectable audio device recording
+- Optional audio-video mixing capabilities
+- Synchronized audio stream management
 
-The application architecture centers around screen capture workflows with customizable input tracking and quality settings. Recording configurations are persisted and managed through dedicated preference handlers, while the input control system enables precise capture control.
+Key Business Files:
+```
+DidYouGet/Models/RecordingManager.swift     - Recording orchestration
+DidYouGet/Models/InputTracking/*Tracker.swift - Input capture system
+DidYouGet/Utilities/AudioManager.swift      - Audio processing
+```
+
+Business Workflows:
+
+1. Recording Session:
+- Area selection and validation
+- Input device configuration
+- Stream initialization and synchronization
+- Multi-format data capture
+
+2. Data Management:
+- Synchronized timestamp management
+- Input event categorization
+- Media stream coordination
+- Format-specific output generation
+
+Importance Scores:
+- Recording Engine: 95 (core business functionality)
+- Input Tracking: 90 (unique interaction capture)
+- Audio Integration: 85 (critical media component)
+- Session Management: 80 (workflow orchestration)
 
 $END$
 END SPECIFICATION

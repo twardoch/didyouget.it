@@ -15,18 +15,14 @@ I want a fast performant app `Did You Get It` (Mac identifier it.didyouget.mac, 
 - `SPEC.md` contains the detailed specification. Check it, make sure you understand it, and then start working.
 - `PROGRESS.md` contains the plan and uses `[ ]` vs. `[x]` items to track the progress. Keep it updated as you work.
 - `CHANGELOG.md` contains the changelog. Keep updated as you work
+- `TODO.md` contains the highest-priority issues that you have to prioritize. Keep updated as you work.
 
-## TODO
+## Operation
 
-CURRENT PROBLEM: 
+As you work: 
 
-- When I click Record in the UI, the UI becomes unresponsive, and I can only force quit the app.
+- Consult TODO.md for highest-priority issues and fix them. Update the file as you work.
+- Consult PROGRESS.md for additional issues and fix them. Update the file as you work.
+- Keep the CHANGELOG.md updated as you work.
+- After you make a change, perform `./run.sh debug` on macOS to build and run the app in debug mode, and observer the console output for any issues.
 
-
-====
-
-GENERALLY: Revise PROGRESS.md. Add the issues mentioned above, prioritize the issues marked with `FIXME`. 
-
-Then start implementing the issues!
-
-Perform `./run.sh debug` on macOS to build and run the app in debug mode.

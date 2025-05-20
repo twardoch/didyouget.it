@@ -1,39 +1,47 @@
 ---
-description: Defines how files are indexed and processed within the DidYouGet screen recording application
-globs: **/*.swift,**/*.ignore,**/Makefile
+description: Defines rules and patterns for file indexing and processing within the screen recording application
+globs: .cursorignore,.cursorindexingignore,**/*.swift,**/*.json
 alwaysApply: false
 ---
 
 
 # indexing-flow
 
-The project's indexing system operates on two primary levels:
+The indexing system follows these core business rules:
 
-1. Recording Asset Indexing
-- Creates uniquely identified recording sessions using timestamp-based naming (DidYouGet_YYYY-MM-DD_HH-MM-SS)
-- Maintains catalog of screen recordings with associated metadata
-- Tracks recording configurations per session
+## Exclusion Patterns
+- `.cursorignore` defines global exclusion patterns 
+- `.cursorindexingignore` specifies additional indexing-specific exclusions
+- Build artifacts and temporary recording files are excluded from indexing
 
-Importance Score: 85
+## File Processing Flow
+1. Screen Recording Assets:
+   - Video frames are processed in real-time at 60 FPS
+   - Retina resolution captures are indexed separately from standard resolution
+   - Audio streams are indexed with timestamp correlation to video frames
 
-2. Input Source Management
-Files processed:
-- PreferencesManager.swift: Input device registration and configuration tracking
-- RecordingManager.swift: Active source monitoring and state management
+2. Input Tracking Data:
+   - Mouse events are indexed in JSON format with categorized interactions
+   - Keyboard events are indexed with privacy filtering for sensitive input
+   - Input timing data is synchronized with video frame indexes
 
-Indexing behaviors:
-- Monitors active input sources (display, audio, keyboard, mouse)
-- Maintains reference mapping between capture sources and output streams
-- Filters input based on user-defined tracking policies
+3. Session Management:
+   - Recording sessions create uniquely indexed containers
+   - Multiple streams (video, audio, input) are cross-referenced by timestamps
+   - Paused sessions maintain index continuity
 
-Importance Score: 75
+Relevant Files:
+```
+.cursorignore
+.cursorindexingignore
+DidYouGet/DidYouGet/Models/RecordingManager.swift
+DidYouGet/DidYouGet/Models/InputTracking/KeyboardTracker.swift
+DidYouGet/DidYouGet/Models/InputTracking/MouseTracker.swift
+```
 
-3. Exclusion Patterns
-Defined in `.cursorindexingignore`:
-- Prevents indexing of temporary recording buffers
-- Excludes system-specific capture artifacts
-- Filters development and build artifacts
-
-Importance Score: 45
+Importance Scores:
+- Recording Asset Indexing: 95 (Core business function)
+- Input Data Indexing: 85 (Critical tracking system)
+- Session Management: 80 (Key organizational component)
 
 $END$
