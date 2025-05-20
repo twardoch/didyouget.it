@@ -77,6 +77,8 @@ class RecordingManager: ObservableObject {
         private let handler: (CMSampleBuffer, SCStreamType) -> Void
         private var screenFrameCount = 0
         private var audioSampleCount = 0
+        private var hasReceivedFirstFrame = false
+        private var firstFrameTime: CMTime?
         
         init(handler: @escaping (CMSampleBuffer, SCStreamType) -> Void) {
             self.handler = handler
@@ -85,28 +87,50 @@ class RecordingManager: ObservableObject {
         }
         
         func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+            // Perform basic buffer validation before proceeding
+            guard CMSampleBufferIsValid(sampleBuffer) else {
+                print("ERROR: Invalid sample buffer received from SCStream - skipping")
+                return
+            }
+            
             switch type {
             case .screen:
                 screenFrameCount += 1
+                
+                // Track the first frame time for potential timing adjustments
+                if !hasReceivedFirstFrame {
+                    firstFrameTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                    hasReceivedFirstFrame = true
+                    print("SCStream output: Received FIRST screen frame! PTS=\(firstFrameTime?.seconds ?? 0)s")
+                }
+                
                 // Only log occasionally to prevent console flooding
                 if screenFrameCount == 1 || screenFrameCount % 300 == 0 {
-                    print("SCStream output: Received screen frame #\(screenFrameCount)")
+                    let currentPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                    print("SCStream output: Received screen frame #\(screenFrameCount), PTS=\(currentPTS.seconds)s")
                 }
+                
+                // Forward to handler for processing
                 handler(sampleBuffer, .screen)
+                
             case .audio:
                 audioSampleCount += 1
                 // Only log occasionally to prevent console flooding
                 if audioSampleCount == 1 || audioSampleCount % 300 == 0 {
-                    print("SCStream output: Received audio sample #\(audioSampleCount)")
+                    let currentPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                    print("SCStream output: Received audio sample #\(audioSampleCount), PTS=\(currentPTS.seconds)s")
                 }
                 handler(sampleBuffer, .audio)
+                
             case .microphone:
                 audioSampleCount += 1
                 // Only log occasionally to prevent console flooding
                 if audioSampleCount == 1 || audioSampleCount % 300 == 0 {
-                    print("SCStream output: Received microphone sample #\(audioSampleCount)")
+                    let currentPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                    print("SCStream output: Received microphone sample #\(audioSampleCount), PTS=\(currentPTS.seconds)s")
                 }
                 handler(sampleBuffer, .audio)
+                
             @unknown default:
                 print("SCStream output: Received unknown type \(type)")
                 break
@@ -758,17 +782,25 @@ class RecordingManager: ObservableObject {
         print("Using video quality: \(videoQuality.rawValue) with bitrate: \(bitrate/1_000_000) Mbps")
         
         // Configure video settings with appropriate parameters
-        let videoSettings: [String: Any] = [
+        // Add additional settings for more reliable encoding
+        var videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: streamConfig?.width ?? 1920,
             AVVideoHeightKey: streamConfig?.height ?? 1080,
             AVVideoCompressionPropertiesKey: [
                 AVVideoAverageBitRateKey: bitrate,
                 AVVideoExpectedSourceFrameRateKey: frameRate,
-                AVVideoMaxKeyFrameIntervalKey: frameRate,
-                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel
+                AVVideoMaxKeyFrameIntervalKey: frameRate, 
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+                // Add these reliability settings
+                AVVideoAllowFrameReorderingKey: false,    // Disable frame reordering for streaming
+                AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCABAC, // Use CABAC for better quality
+                "RequiresBFrames": false                  // Avoid B-frames for better streaming
             ]
         ]
+        
+        // Log detailed configuration for debugging
+        print("VIDEO CONFIG: Width=\(streamConfig?.width ?? 1920), Height=\(streamConfig?.height ?? 1080), BitRate=\(bitrate/1_000_000)Mbps, FrameRate=\(frameRate)")
         
         // For area captures, log info about settings
         if captureType == .area, let area = recordingArea {
@@ -904,6 +936,12 @@ class RecordingManager: ObservableObject {
                 return
             }
             
+            // First ensure the sample buffer is valid before attempting to copy
+            guard CMSampleBufferIsValid(sampleBuffer) else {
+                print("ERROR: Invalid sample buffer received from stream")
+                return
+            }
+            
             // Create a local copy of the buffer to avoid potential threading issues
             // This is critical for preventing buffer loss during transfers between queues
             var newBuffer: CMSampleBuffer?
@@ -912,13 +950,19 @@ class RecordingManager: ObservableObject {
             let status = CMSampleBufferCreateCopy(allocator: kCFAllocatorDefault, sampleBuffer: sampleBuffer, sampleBufferOut: &newBuffer)
             
             if status != noErr || newBuffer == nil {
-                print("ERROR: Failed to create copy of sample buffer")
-                // Fallback to using the original buffer
+                print("WARNING: Failed to create copy of sample buffer (status: \(status))")
+                // Fallback to using the original buffer if copy failed
                 newBuffer = sampleBuffer
             }
             
-            // Ensure buffer is valid
+            // Final validity check before processing
             if let safeSampleBuffer = newBuffer, CMSampleBufferIsValid(safeSampleBuffer) {
+                // Check if there's a valid image buffer for video frames
+                if type == .screen && CMSampleBufferGetImageBuffer(safeSampleBuffer) == nil {
+                    print("ERROR: Invalid pixel buffer in sample buffer - skipping frame")
+                    return
+                }
+                
                 // Use Task with high priority to dispatch back to the main actor
                 // This is critical for handling frames in real-time
                 Task(priority: .userInitiated) { @MainActor in
@@ -926,12 +970,18 @@ class RecordingManager: ObservableObject {
                     case .screen:
                         // Process screen frames immediately and report success/failure
                         if !self.processSampleBuffer(safeSampleBuffer) {
-                            print("ERROR: Failed to process video frame #\(self.videoFrameLogCounter)")
+                            // Only log errors occasionally to avoid flooding the console
+                            if self.videoFramesProcessed == 0 || self.videoFramesProcessed % 60 == 0 {                           
+                                print("ERROR: Failed to process video frame #\(self.videoFrameLogCounter)")
+                            }
                         }
                     case .audio:
                         // Process audio samples immediately
                         if !self.processAudioSampleBuffer(safeSampleBuffer) {
-                            print("ERROR: Failed to process audio sample #\(self.audioSampleLogCounter)")
+                            // Only log errors occasionally to avoid flooding the console
+                            if self.audioSamplesProcessed == 0 || self.audioSamplesProcessed % 60 == 0 {
+                                print("ERROR: Failed to process audio sample #\(self.audioSampleLogCounter)")
+                            }
                         }
                     @unknown default:
                         print("Unknown sample type, cannot process")
@@ -939,7 +989,7 @@ class RecordingManager: ObservableObject {
                     }
                 }
             } else {
-                print("ERROR: Invalid sample buffer received from stream")
+                print("ERROR: Invalid sample buffer after copy attempt - cannot process")
             }
         }
         
@@ -966,9 +1016,17 @@ class RecordingManager: ObservableObject {
         try await stream.startCapture()
         print("SCStream capture started successfully")
         
-        // Start writer sessions
+        // Start writer sessions with a valid time base
         print("Starting video writer session at time zero...")
-        videoWriter.startSession(atSourceTime: .zero)
+        
+        // Create a more reliable time base - explicitly use CMTime.zero
+        let sessionStartTime = CMTime.zero
+        
+        // Set timestamp synchronization variables
+        self.startTime = Date()
+        
+        // Start the session with the fixed start time
+        videoWriter.startSession(atSourceTime: sessionStartTime)
         
         // Verify session started correctly
         if videoWriter.status != .writing {
@@ -978,12 +1036,28 @@ class RecordingManager: ObservableObject {
             }
         } else {
             print("✓ Video writer session started successfully at time zero")
+            
+            // Immediately force file creation to detect any permission/path issues early
+            // This helps ensure the file is properly created on disk
+            do {
+                let fileManager = FileManager.default
+                if !fileManager.fileExists(atPath: videoWriter.outputURL.path) {
+                    // Create an empty file to test permissions
+                    try Data().write(to: videoWriter.outputURL)
+                    print("✓ Empty video file created for writer initialization")
+                } else {
+                    print("✓ Video file already exists at path")
+                }
+            } catch {
+                print("CRITICAL ERROR: Unable to create file at path: \(videoWriter.outputURL.path)")
+                print("Error details: \(error.localizedDescription)")
+            }
         }
         
         // Start audio session if needed
         if let audioWriter = audioAssetWriter {
             print("Starting audio writer session at time zero...")
-            audioWriter.startSession(atSourceTime: .zero)
+            audioWriter.startSession(atSourceTime: sessionStartTime)
             
             // Verify audio session started correctly
             if audioWriter.status != .writing {
@@ -1084,20 +1158,33 @@ class RecordingManager: ObservableObject {
             }
         }
         
-        // Check buffer validity details
+        // Get the presentation timestamp and ensure it's valid
         let presentationTimeStamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        print("BUFFER DEBUG: PTS: \(presentationTimeStamp.seconds), Buffer valid: \(CMSampleBufferIsValid(sampleBuffer) ? "Yes" : "No")")
+        
+        // Fix for potential zero-duration timestamp issues
+        var adjustedBuffer = sampleBuffer
+        
+        // Adjust timestamp if needed (handling potential negative timestamps or zero duration)
+        if presentationTimeStamp.seconds < 0 || CMTimeCompare(presentationTimeStamp, .zero) < 0 {
+            print("WARNING: Adjusting negative presentation timestamp")
+            // Create a modified buffer with adjusted timestamp if needed
+            if let sampleBuffer = adjustSampleBufferTimestamp(sampleBuffer) {
+                adjustedBuffer = sampleBuffer
+            }
+        }
+        
+        print("BUFFER DEBUG: PTS: \(presentationTimeStamp.seconds), Buffer valid: \(CMSampleBufferIsValid(adjustedBuffer) ? "Yes" : "No")")
         
         // Explicit check for frame rate
-        if let attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [Any],
+        if let attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(adjustedBuffer, createIfNecessary: false) as? [Any],
            let attachments = attachmentsArray.first as? [String: Any] {
             if let fps = attachments["FPS"] as? Float {
                 print("BUFFER DEBUG: Framerate: \(fps) FPS")
             }
         }
         
-        // Append the buffer with detailed error checking
-        let success = videoInput.append(sampleBuffer)
+        // Append the buffer with detailed error checking - use append with propTime to ensure proper timing
+        let success = videoInput.append(adjustedBuffer)
         
         if !success {
             print("ERROR: Failed to append video sample buffer")
@@ -1115,7 +1202,7 @@ class RecordingManager: ObservableObject {
             }
             
             // Check buffer timing
-            print("CRITICAL: Buffer timing - PTS=\(presentationTimeStamp.seconds)s, Duration=\(CMSampleBufferGetDuration(sampleBuffer).seconds)s")
+            print("CRITICAL: Buffer timing - PTS=\(presentationTimeStamp.seconds)s, Duration=\(CMSampleBufferGetDuration(adjustedBuffer).seconds)s")
             
             // Check for common timing issues
             if presentationTimeStamp.seconds < 0 {
@@ -1172,6 +1259,65 @@ class RecordingManager: ObservableObject {
             
             return true
         }
+    }
+    
+    // Helper to adjust sample buffer timestamps if they're invalid
+    private func adjustSampleBufferTimestamp(_ sampleBuffer: CMSampleBuffer) -> CMSampleBuffer? {
+        // This function creates a new sample buffer with valid timing
+        // This is needed when SCStream provides frames with problematic timestamps
+        
+        // First, we need to extract the current timing info
+        let originalPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        var originalDuration = CMSampleBufferGetDuration(sampleBuffer)
+        
+        // If duration is invalid, use a default value (1/60 sec)
+        if CMTIME_IS_INVALID(originalDuration) || originalDuration.seconds.isNaN || originalDuration.seconds <= 0 {
+            originalDuration = CMTime(value: 1, timescale: 60) // 1/60 sec
+            print("WARNING: Using default duration for invalid sample buffer duration")
+        }
+        
+        // Check if the sample buffer has a valid format description
+        if CMSampleBufferGetFormatDescription(sampleBuffer) == nil {
+            print("ERROR: Cannot get format description from sample buffer")
+            return nil
+        }
+        
+        // Check if the sample buffer has valid data
+        if CMSampleBufferGetDataBuffer(sampleBuffer) == nil {
+            print("ERROR: Cannot get data buffer from sample buffer")
+            return nil
+        }
+        
+        // Create a new presentation timestamp starting from a valid time
+        // We'll use the current system time to ensure it's always positive
+        let currentTime = CMClockGetTime(CMClockGetHostTimeClock())
+        let adjustedPTS = videoFramesProcessed == 0 ? CMTime.zero : currentTime
+        
+        // Log the adjustment we're making
+        print("TIMESTAMP ADJUST: Original=\(originalPTS.seconds)s, Adjusted=\(adjustedPTS.seconds)s")
+        
+        // Create timing info array with the adjusted time
+        var timingInfo = CMSampleTimingInfo()
+        timingInfo.duration = originalDuration
+        timingInfo.presentationTimeStamp = adjustedPTS
+        timingInfo.decodeTimeStamp = .invalid
+        
+        // Create the new sample buffer with the adjusted timing
+        var adjustedBuffer: CMSampleBuffer?
+        let status = CMSampleBufferCreateCopyWithNewTiming(
+            allocator: kCFAllocatorDefault,
+            sampleBuffer: sampleBuffer,
+            sampleTimingEntryCount: 1,
+            sampleTimingArray: &timingInfo,
+            sampleBufferOut: &adjustedBuffer
+        )
+        
+        if status != noErr || adjustedBuffer == nil {
+            print("ERROR: Failed to create adjusted sample buffer, status: \(status)")
+            return nil
+        }
+        
+        return adjustedBuffer
     }
     
     @MainActor

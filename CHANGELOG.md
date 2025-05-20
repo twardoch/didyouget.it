@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Fixed critical issue with zero-length video files (.mov) while maintaining mouse and keyboard tracking
+- Resolved problems with invalid sample buffer timestamps from ScreenCaptureKit
+- Fixed potential thread synchronization issues in video frame processing pipeline
+- Improved error detection and handling throughout the recording process
+- Enhanced validation of buffer integrity before processing to prevent empty files
+
 ### Added
 - Initial project structure and build configuration
 - Basic SwiftUI application with menu bar interface
@@ -110,6 +117,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed concurrency and state management in SwiftUI lifecycle, preventing race conditions.
 - Resolved issue where recording state wasn't properly set, causing timer and tracking files to fail.
 - Successfully fixed JSON tracking files for mouse and keyboard - they now record properly.
+- Fixed critical issue with zero-length video files by improving sample buffer processing:
+  - Added timestamp validation and adjustment for video frames to handle negative or invalid presentation timestamps
+  - Enhanced SCStreamFrameOutput with first frame detection and proper timing tracking
+  - Improved video encoder configuration with more reliable parameters including CABAC entropy mode
+  - Added explicit file creation verification during AVAssetWriter initialization
+  - Added support for adjusting buffer timestamps when they have invalid values
+  - Fixed issues with sample buffer handling and thread synchronization
+  - Fixed buffer validation checks in SCStreamFrameOutput to prevent processing invalid frames
+  - Added proper handling of pixel buffer validations for video frames
 
 
 ### Planned
