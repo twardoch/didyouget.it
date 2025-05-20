@@ -272,7 +272,7 @@
 
 ## Current Status
 
-**Project Start Date**: January 2025 **Current Phase**: Phase 5 - File Management (85% complete) **Completion**: 65%
+**Project Start Date**: January 2025 **Current Phase**: Phase 5 - File Management (90% complete) **Completion**: 70%
 
 ### Recent Updates
 
@@ -305,6 +305,21 @@
 - Implemented separate audio file output option
 - Created file organization structure for recordings
 - Cleaned up UI by removing redundant elements and streamlining the interface
+- Fixed critical issue with empty .mov files produced during recording
+- Improved logging throughout the recording process for better diagnostics
+- Enhanced video and audio writer initialization and configuration
+- Fixed issues with input tracking JSON files not being created correctly
+- Added comprehensive file verification checks after recording completes
+- Improved error handling in sample buffer processing
+
+### Current Issues Fixed
+
+1. **Empty .mov files** - Fixed issues in the video capture pipeline that were causing empty video files
+2. **Missing JSON files** - Enhanced input tracking initialization, file creation, and error handling
+3. **File verification** - Added more robust checks to verify file existence and contents after recording
+4. **Improved logging** - Added comprehensive logging throughout the recording process for better diagnostics
+5. **Preferences handling** - Fixed issues where preferences weren't correctly accessed during recording
+6. **Stream output handling** - Enhanced frame and sample buffer processing to properly handle video and audio
 
 ### Next Steps
 

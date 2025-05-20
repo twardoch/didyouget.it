@@ -46,13 +46,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Updated .gitignore for Swift/macOS development
 - Fixed critical crash in recording engine during sample buffer processing
-- Completely redesigned the sample buffer handling to use main thread processing
-- Created dedicated dispatch queues for screen and audio capture with appropriate QoS
-- Added output file verification and detailed diagnostics to troubleshoot recording issues
-- Improved buffer synchronization with explicit object locking
-- Added delay between operations to ensure consistent capture finalization
-- Enhanced error reporting for empty or missing files
-- Implemented comprehensive file validation on recording completion
+- Redesigned sample buffer handling to use proper MainActor isolation
+- Fixed thread synchronization issues across the recording pipeline
+- Added detailed diagnostics and frame/sample counting to monitor capture
+- Fixed critical issues with zero-length video output files
+- Added proper validation for sample buffer integrity
+- Improved AVAssetWriter configuration and error handling
+- Redesigned the capture session startup and teardown for more reliability
 - Added validation checks for recording state transitions
 - Minimum macOS version set to 13.0 for MenuBarExtra API
 - Enhanced RecordingManager with full screen capture implementation
@@ -67,6 +67,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Eliminated confusing icon/text tab combinations for a more consistent interface
 - Removed redundant "Capture Type" label for cleaner appearance
 - Removed potentially confusing circular icon from recording status area
+- Fixed critical issue with empty .mov files during recording
+- Added extensive logging throughout the recording process for better diagnostics
+- Enhanced video and audio writer initialization and configuration with better error handling
+- Fixed issues with input tracking JSON files not being created correctly
+- Added comprehensive file verification checks after recording completes
+- Improved error handling and reporting in sample buffer processing components
+- Added frame and audio sample diagnostics for monitoring recording quality
+- Improved error feedback throughout the recording pipeline
+- Enhanced URL creation for recording files with better validation
+- Fixed preferences access issues during recording session setup
+- Added more robust bitrate and quality settings based on selected preferences
+- Improved handling of video dimensions for Retina displays
 
 ### Planned
 - Full featured area selection tool with visual selection interface
