@@ -21,15 +21,18 @@ I want a fast performant app `Did You Get It` (Mac identifier it.didyouget.mac, 
 
 As you work: 
 
+- Before you start working, analyze the recent git changes. 
 - Consult TODO.md for highest-priority issues and fix them. Update the file as you work.
 - Consult PROGRESS.md for additional issues and fix them. Update the file as you work.
 - Keep the CHANGELOG.md updated as you work.
-- After you make a change, perform `./run.sh debug` on macOS to build and run the app in debug mode, and observer the console output for any issues.
+- After you make a change, perform `./run.sh` on macOS to build and run the app in debug mode, and observer the console output for any issues.
+
+
 
 
 START SPECIFICATION:
 ---
-description: Document high-level business logic and core functionality for screen recording applications with input tracking capabilities
+description: Overview of a macOS screen recording application focused on synchronized capture of video, audio, and input events with advanced tracking capabilities
 globs: *.swift,*.md
 alwaysApply: false
 ---
@@ -46,60 +49,62 @@ alwaysApply: false
 - Explain your OBSERVATIONS clearly, then provide REASONING to identify the exact issue. Add console logs when needed to gather more information.
 
 
-Screen Recording Core System ("Did You Get It")
-Importance Score: 95
+Did You Get It (didyouget.it) is a macOS screen recording system with synchronized multi-stream capture capabilities.
 
-A macOS screen recording system with advanced input tracking capabilities focusing on:
+Core Components:
 
-Recording Core:
-- Full resolution (Retina) screen capture at 60 FPS
-- Configurable recording area selection
-- Optional audio device integration
-- Mouse/keyboard action tracking with detailed event discrimination
+1. Recording Coordination System
+- Manages synchronized capture of video, audio, and input events
+- Implements three recording modes: full display, window, and custom area
+- Coordinates between separate data streams with timestamp synchronization
 
-Primary Components:
+2. Input Event Tracking
+- Mouse tracking with click/hold detection and movement capture
+- Keyboard monitoring with tap/hold differentiation
+- JSON-formatted event logging with precise timing data
 
-1. Input Tracking Engine (Score: 90)
-- Differentiated click vs. hold-release detection
-- Keyboard stroke capture with tap/hold discrimination
-- Structured JSON output format for replay analysis
-- Timestamp correlation between input events
+3. Media Processing Pipeline
+Main Flows:
+- Screen capture at 60 FPS with Retina resolution support
+- Optional audio device selection and recording
+- Input event capture with timing correlation
+- Combined or separate output streams
 
-2. Recording Management (Score: 85)
-- Screen area configuration and capture
-- Audio device selection and synchronization
-- Input tracking activation/deactivation
-- Output file management for video/audio/input data
+Key Business Rules:
 
-3. Device Integration (Score: 80)
-- Audio device enumeration and selection
-- Screen selection and boundary management
-- Input device monitoring and event capture
+1. Recording Controls
+- Mandatory display/window selection enforcement
+- Permission and resource validation
+- Recovery from interrupted sessions
 
-Business-Critical Files:
-```
-DidYouGet/Models/InputTracking/KeyboardTracker.swift
-DidYouGet/Models/InputTracking/MouseTracker.swift
-DidYouGet/Utilities/AudioManager.swift
-```
+2. Stream Management
+- Coordinated timestamp synchronization
+- Guaranteed event ordering
+- Independent stream quality control
 
-Key Business Workflows:
-1. Screen Recording Pipeline
-- Area selection
-- Device initialization
-- Capture stream management
-- File output coordination
+3. Data Collection
+- Configurable capture area selection
+- Audio device management
+- Mouse/keyboard event differentiation
 
-2. Input Tracking Pipeline
-- Event discrimination
-- State tracking
-- JSON formatting
-- Synchronized storage
+Business Logic Organization:
 
-3. Audio Integration Pipeline
-- Device selection
-- Stream synchronization
-- Mixed output generation
+1. Core Services (/Models/RecordingManager.swift)
+- Central recording coordination
+- Stream synchronization logic
+- Session state management
+
+2. Input Processing (/Models/InputTracking/)
+- Mouse event differentiation
+- Keyboard state tracking
+- Event timing coordination
+
+3. Media Handling (/Models/Recording/)
+- Video frame processing
+- Audio stream management
+- Output format control
+
+The system's primary value proposition lies in its ability to maintain precise synchronization between multiple data streams while providing detailed input tracking capabilities.
 
 $END$
 END SPECIFICATION

@@ -1,36 +1,71 @@
 ---
-description: Rules for file indexing and inclusion/exclusion processing in the application
-globs: .cursorignore,.cursorindexingignore,Makefile,**/build/**,**/dist/**
+description: Guides the file processing and indexing workflow for recording and input tracking data
+globs: **/*.swift,**/Recording/*.swift,**/InputTracking/*.swift
 alwaysApply: false
 ---
 
 
 # indexing-flow
 
-The indexing system processes files according to a hierarchical set of rules and patterns:
+## File Processing Pipeline
 
-## File Selection Logic (70)
-Main indexing configuration is split across two files:
-- `.cursorignore` - Global exclusion patterns
-- `.cursorindexingignore` - Project-specific indexing rules
+The recording system processes different data streams in parallel tracks that must be synchronized:
 
-Files are processed in the following order:
-1. Apply global ignore patterns
-2. Check project-specific ignore rules
-3. Process remaining files through the build system
+1. Visual Stream
+- Screen capture frames from selected display/window/area
+- Metadata including frame timestamps and resolution
+- Located in: `DidYouGet/DidYouGet/Models/Recording/VideoProcessor.swift`
 
-## Build Integration (65)
-The Makefile coordinates indexing integration with the build process:
-1. Pre-build indexing scan
-2. Build artifact tracking
-3. Post-build index updates for generated files
+2. Input Event Stream
+- Mouse events (clicks, movements, drags)
+- Keyboard events (taps, holds, releases)
+- Located in:
+  - `DidYouGet/DidYouGet/Models/InputTracking/MouseTracker.swift`
+  - `DidYouGet/DidYouGet/Models/InputTracking/KeyboardTracker.swift`
 
-## Reference Resolution (60)
-Reference handling follows a specific path:
-1. Local file references within the project structure
-2. External package references (via Package.swift)
-3. System framework linkages
+3. Audio Stream (Optional)
+- Raw audio buffer data
+- Audio device metadata
+- Located in: `DidYouGet/DidYouGet/Models/Recording/AudioProcessor.swift`
 
-The system maintains separation between source indexing and build artifact indexing to prevent contamination between the two contexts.
+## Inclusion Rules
+
+Files are processed based on the following decision tree:
+
+1. Recording Session Files
+- Include if associated with active recording session
+- Must contain valid timestamp data
+- Must match selected capture mode (full/window/area)
+
+2. Input Tracking Files
+- Include if input tracking is enabled in preferences
+- Must contain valid event sequence data
+- Must maintain temporal alignment with video stream
+
+3. Audio Files
+- Include only if audio recording is enabled
+- Must have valid device selection
+- Must maintain sync with video timeline
+
+## Reference Resolution
+
+The system maintains three types of references:
+
+1. Temporal References
+- Frame timestamps for video stream
+- Event timestamps for input tracking
+- Sample timestamps for audio
+
+2. Resource References
+- Display/window identifiers
+- Audio device identifiers
+- Output file paths
+
+3. State References
+- Recording session status
+- Input tracking enablement
+- Audio mixing configuration
+
+Importance Score: 85 (Key integration point for coordinating multiple data streams)
 
 $END$

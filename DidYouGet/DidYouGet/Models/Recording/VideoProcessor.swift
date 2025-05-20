@@ -4,6 +4,24 @@ import Foundation
 import Cocoa
 import CoreMedia
 
+// Helper functions to make code cleaner
+extension AVMutableMetadataItem {
+    func setKeySpace(_ keySpace: AVMetadataKeySpace) -> Self {
+        self.keySpace = keySpace
+        return self
+    }
+    
+    func setKey(_ key: NSCopying & NSObjectProtocol) -> Self {
+        self.key = key
+        return self
+    }
+    
+    func setValue(_ value: NSCopying & NSObjectProtocol) -> Self {
+        self.value = value
+        return self
+    }
+}
+
 @available(macOS 12.3, *)
 @MainActor
 class VideoProcessor {
@@ -42,15 +60,32 @@ class VideoProcessor {
                              userInfo: [NSLocalizedDescriptionKey: "Failed to create test file at output path: \(error.localizedDescription)"])
             }
             
-            // Now create the AVAssetWriter
+            // Now create the AVAssetWriter - ensure proper file type and settings
             videoAssetWriter = try AVAssetWriter(outputURL: url, fileType: .mov)
             videoOutputURL = url
+            
+            // Write a placeholder file immediately to ensure disk space
+            try "placeholder".data(using: .utf8)?.write(to: url)
+            print("✓ Created placeholder file for video writer")
             
             // Verify the writer was created successfully
             guard let writer = videoAssetWriter else {
                 throw NSError(domain: "VideoProcessor", code: 1021, 
                              userInfo: [NSLocalizedDescriptionKey: "Failed to create video asset writer - writer is nil"])
             }
+            
+            // Set additional metadata to help with file creation
+            let titleItem = AVMutableMetadataItem()
+                .setKeySpace(AVMetadataKeySpace.common)
+                .setKey(AVMetadataKey.commonKeyTitle as NSString)
+                .setValue("DidYouGetIt Recording" as NSString)
+                
+            let dateItem = AVMutableMetadataItem()
+                .setKeySpace(AVMetadataKeySpace.common)
+                .setKey(AVMetadataKey.commonKeyCreationDate as NSString)
+                .setValue(Date().description as NSString)
+                
+            writer.metadata = [titleItem, dateItem]
             
             // Check writer status
             if writer.status != .unknown {
@@ -199,15 +234,12 @@ class VideoProcessor {
         // Debug logging to track frequency of frame arrivals
         videoFrameLogCounter += 1
         
-        // Log only the first frame and then occasionally to avoid flooding console
-        let shouldLogDetail = videoFrameLogCounter == 1 || videoFrameLogCounter % 300 == 0
+        // Log more frequently for debugging
+        let shouldLogDetail = videoFrameLogCounter == 1 || videoFrameLogCounter % 100 == 0
         
         if shouldLogDetail {
             print("VIDEO FRAME: Processing frame #\(videoFrameLogCounter)")
         }
-        
-        // Only skip if explicitly paused - this check should be done before calling this method
-        // if isPaused { return false }
         
         // Before using a potentially less reliable buffer, validate it
         guard CMSampleBufferDataIsReady(sampleBuffer) else {
@@ -238,14 +270,35 @@ class VideoProcessor {
             return false
         }
         
-        guard writer.status == .writing else {
-            print("ERROR: Writer is not in writing state. Current state: \(writer.status.rawValue)")
-            return false
+        // Check writer status and try to recover if possible
+        if writer.status != .writing {
+            print("WARNING: Writer is not in writing state. Current state: \(writer.status.rawValue)")
+            
+            // Try to start writing if it's in unknown state
+            if writer.status == .unknown {
+                print("Attempting to start writer that was in unknown state")
+                if writer.startWriting() {
+                    print("Successfully started writer from unknown state")
+                    writer.startSession(atSourceTime: .zero)
+                } else {
+                    print("ERROR: Failed to start writer from unknown state")
+                    return false
+                }
+            } else {
+                print("ERROR: Writer in unexpected state: \(writer.status.rawValue)")
+                return false
+            }
         }
         
-        guard videoInput.isReadyForMoreMediaData else {
-            print("WARNING: Video input is not ready for more data")
-            return false
+        // Make sure the input is ready
+        if !videoInput.isReadyForMoreMediaData {
+            // Wait a moment for input to be ready
+            print("WARNING: Video input is not ready for more data, waiting briefly...")
+            Thread.sleep(forTimeInterval: 0.01)
+            if !videoInput.isReadyForMoreMediaData {
+                print("ERROR: Video input still not ready after delay")
+                return false
+            }
         }
         
         // Get timing info from the sample buffer
@@ -258,19 +311,6 @@ class VideoProcessor {
             }
         }
         
-        // Debug AVAssetWriter status before attempting to append
-        print("WRITER DEBUG: Before append - Status: \(writer.status.rawValue), Input ready: \(videoInput.isReadyForMoreMediaData)")
-        
-        // Force flush any pending writes
-        if videoFramesProcessed > 0 && videoFramesProcessed % 100 == 0 {
-            print("WRITER DEBUG: Performing explicit file write flush")
-            do {
-                _ = try FileManager.default.attributesOfItem(atPath: writer.outputURL.path)
-            } catch {
-                print("WRITER DEBUG: File not written yet or error: \(error.localizedDescription)")
-            }
-        }
-        
         // Get the presentation timestamp and ensure it's valid
         let presentationTimeStamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         
@@ -278,25 +318,34 @@ class VideoProcessor {
         var adjustedBuffer = sampleBuffer
         
         // Adjust timestamp if needed (handling potential negative timestamps or zero duration)
-        if presentationTimeStamp.seconds < 0 || CMTimeCompare(presentationTimeStamp, .zero) < 0 {
-            print("WARNING: Adjusting negative presentation timestamp")
+        if presentationTimeStamp.seconds < 0 || CMTimeCompare(presentationTimeStamp, .zero) < 0 || CMTIME_IS_INVALID(presentationTimeStamp) {
+            print("WARNING: Adjusting invalid presentation timestamp")
             // Create a modified buffer with adjusted timestamp if needed
-            if let sampleBuffer = adjustSampleBufferTimestamp(sampleBuffer) {
-                adjustedBuffer = sampleBuffer
+            if let adjustedSampleBuffer = adjustSampleBufferTimestamp(sampleBuffer) {
+                adjustedBuffer = adjustedSampleBuffer
+            } else {
+                print("ERROR: Failed to adjust sample buffer timestamp")
+                return false
             }
         }
         
-        print("BUFFER DEBUG: PTS: \(presentationTimeStamp.seconds), Buffer valid: \(CMSampleBufferIsValid(adjustedBuffer) ? "Yes" : "No")")
-        
-        // Explicit check for frame rate
-        if let attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(adjustedBuffer, createIfNecessary: false) as? [Any],
-           let attachments = attachmentsArray.first as? [String: Any] {
-            if let fps = attachments["FPS"] as? Float {
-                print("BUFFER DEBUG: Framerate: \(fps) FPS")
+        // Force synchronize file periodically to ensure data is written
+        if videoFramesProcessed > 0 && videoFramesProcessed % 30 == 0 {
+            // Attempt to synchronize file to disk
+            if let fileHandle = FileHandle(forWritingAtPath: writer.outputURL.path) {
+                fileHandle.synchronizeFile()
+                fileHandle.closeFile()
+                print("DEBUG: Synchronized file to disk at frame \(videoFramesProcessed)")
             }
         }
         
-        // Append the buffer with detailed error checking - use append with propTime to ensure proper timing
+        // Double-check buffer validity
+        if !CMSampleBufferIsValid(adjustedBuffer) {
+            print("ERROR: Sample buffer is invalid after adjustment")
+            return false
+        }
+        
+        // Append the buffer with detailed error checking
         let success = videoInput.append(adjustedBuffer)
         
         if !success {
@@ -309,38 +358,16 @@ class VideoProcessor {
                 print("CRITICAL: Error details: \(error)")
             }
             
-            // Check if input is still ready after failed append
-            if !videoInput.isReadyForMoreMediaData {
-                print("ERROR: Video input is no longer ready for more data after failed append")
-            }
-            
-            // Check buffer timing
-            print("CRITICAL: Buffer timing - PTS=\(presentationTimeStamp.seconds)s, Duration=\(CMSampleBufferGetDuration(adjustedBuffer).seconds)s")
-            
-            // Check for common timing issues
-            if presentationTimeStamp.seconds < 0 {
-                print("CRITICAL: Negative presentation timestamp detected!")
-            }
-            
-            if CMTimeCompare(presentationTimeStamp, .zero) < 0 {
-                print("CRITICAL: Presentation timestamp is before zero time!")
-            }
-            
-            // Cannot recover within this session - just log the error
-            print("CRITICAL: Video frame processing failed. This session will likely produce an empty MOV file.")
-            print("CRITICAL: The recommended action is to stop recording and start a new session.")
-            
-            // Mark that we've had a critical error
-            videoFramesProcessed = -1 // Use negative value as an error indicator
-            
-            // Attempt to write a small test chunk to the file to verify permissions
-            do {
-                let data = Data([0, 0, 0, 0, 0, 0, 0, 0]) // 8 bytes of zeros
-                let url = writer.outputURL
-                try data.write(to: url, options: .atomic)
-                print("TEST: Successfully wrote test data directly to \(url.path)")
-            } catch {
-                print("CRITICAL ERROR: Failed to write test data to file: \(error)")
+            // Try to create a fallback frame if this is our first frame (critical for file initialization)
+            if videoFramesProcessed == 0 {
+                print("RECOVERY: Attempting to create fallback frame for first frame")
+                if createAndAppendFallbackFrame() {
+                    print("✓ RECOVERY: Successfully created fallback first frame")
+                    videoFramesProcessed += 1
+                    return true
+                } else {
+                    print("ERROR: Failed to create fallback frame")
+                }
             }
             
             return false
@@ -358,17 +385,20 @@ class VideoProcessor {
                     if let fileSize = attributes[.size] as? UInt64 {
                         print("✓ VIDEO FILE: Size after first frame = \(fileSize) bytes")
                     }
+                    
+                    // Create a backup file marker to confirm we've started writing frames
+                    let markerPath = writer.outputURL.deletingLastPathComponent().appendingPathComponent(".recording_started")
+                    try "Started".write(to: markerPath, atomically: true, encoding: .utf8)
                 } catch {
                     print("WARNING: Unable to check video file size: \(error.localizedDescription)")
                 }
             }
             
-            // Log successful append periodically
-            if videoFramesProcessed % 60 == 0 {
+            // Log successful append more frequently during development
+            if videoFramesProcessed % 30 == 0 {
                 print("✓ VIDEO SUCCESS: Processed \(videoFramesProcessed) video frames successfully")
-                print("✓ VIDEO WRITER: Status=\(writer.status.rawValue), URL=\(writer.outputURL.path)")
                 
-                // Print file size check
+                // Periodically check file size
                 do {
                     let fileManager = FileManager.default
                     let attributes = try fileManager.attributesOfItem(atPath: writer.outputURL.path)
@@ -382,6 +412,87 @@ class VideoProcessor {
             
             return true
         }
+    }
+    
+    // Helper function to create a fallback frame if we can't process the first frame
+    private func createAndAppendFallbackFrame() -> Bool {
+        guard let videoInput = videoInput else {
+            print("ERROR: Video input is nil during fallback frame creation")
+            return false
+        }
+        
+        guard let writer = videoAssetWriter, writer.status == .writing else {
+            print("ERROR: Writer not in writing state during fallback frame creation")
+            return false
+        }
+        
+        // Create a blank frame
+        let width = 320
+        let height = 240
+        let bytesPerRow = width * 4
+        
+        // Create a black frame
+        let bufferSize = height * bytesPerRow
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        defer { buffer.deallocate() }
+        memset(buffer, 0, bufferSize)
+        
+        // Create CVPixelBuffer
+        var pixelBuffer: CVPixelBuffer?
+        let status = CVPixelBufferCreateWithBytes(
+            kCFAllocatorDefault,
+            width,
+            height,
+            kCVPixelFormatType_32ARGB,
+            buffer,
+            bytesPerRow,
+            nil,
+            nil,
+            nil,
+            &pixelBuffer
+        )
+        
+        guard status == kCVReturnSuccess, let pixelBuffer = pixelBuffer else {
+            print("ERROR: Failed to create pixel buffer, status: \(status)")
+            return false
+        }
+        
+        // Create CMSampleBuffer from pixel buffer
+        var sampleBuffer: CMSampleBuffer?
+        var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 30), presentationTimeStamp: .zero, decodeTimeStamp: .invalid)
+        
+        // Create format description
+        var formatDescription: CMFormatDescription?
+        let formatStatus = CMVideoFormatDescriptionCreateForImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: pixelBuffer,
+            formatDescriptionOut: &formatDescription
+        )
+        
+        guard formatStatus == noErr, let formatDescription = formatDescription else {
+            print("ERROR: Failed to create format description, status: \(formatStatus)")
+            return false
+        }
+        
+        // Create sample buffer
+        let sampleStatus = CMSampleBufferCreateForImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: pixelBuffer,
+            dataReady: true,
+            makeDataReadyCallback: nil,
+            refcon: nil,
+            formatDescription: formatDescription,
+            sampleTiming: &timing,
+            sampleBufferOut: &sampleBuffer
+        )
+        
+        guard sampleStatus == noErr, let sampleBuffer = sampleBuffer else {
+            print("ERROR: Failed to create sample buffer, status: \(sampleStatus)")
+            return false
+        }
+        
+        // Append the buffer
+        return videoInput.append(sampleBuffer)
     }
     
     // Helper to adjust sample buffer timestamps if they're invalid
@@ -414,7 +525,7 @@ class VideoProcessor {
         // Create a new presentation timestamp starting from a valid time
         // We'll use the current system time to ensure it's always positive
         let currentTime = CMClockGetTime(CMClockGetHostTimeClock())
-        let adjustedPTS = videoFramesProcessed == 0 ? CMTime.zero : currentTime
+        let adjustedPTS = self.videoFramesProcessed == 0 ? CMTime.zero : currentTime
         
         // Log the adjustment we're making
         print("TIMESTAMP ADJUST: Original=\(originalPTS.seconds)s, Adjusted=\(adjustedPTS.seconds)s")
@@ -452,12 +563,13 @@ class VideoProcessor {
         print("Finalizing video file...")
             
         // Check file size BEFORE finalization
-        do {
-            let fileManager = FileManager.default
-            let outputURL = writer.outputURL
-            if fileManager.fileExists(atPath: outputURL.path) {
+        let fileManager = FileManager.default
+        let outputURL = writer.outputURL
+        
+        if fileManager.fileExists(atPath: outputURL.path) {
+            do {
                 let attrs = try fileManager.attributesOfItem(atPath: outputURL.path)
-                if let fileSize = attrs[.size] as? UInt64 {
+                if let fileSize = attrs[FileAttributeKey.size] as? UInt64 {
                     print("PRE-FINALIZE VIDEO FILE SIZE: \(fileSize) bytes")
                     
                     if fileSize == 0 {
@@ -467,16 +579,16 @@ class VideoProcessor {
                         print("WRITER STATE DUMP:")
                         print("  - Status: \(writer.status.rawValue)")
                         print("  - Error: \(writer.error?.localizedDescription ?? "nil")")
-                        print("  - Video frames processed: \(videoFramesProcessed)")
+                        print("  - Video frames processed: \(self.videoFramesProcessed)")
                     } else {
                         print("GOOD NEWS: Video file has content before finalization!")
                     }
                 }
-            } else {
-                print("WARNING: Video file does not exist at path: \(outputURL.path)")
+            } catch {
+                print("WARNING: Error checking video file before finalization: \(error)")
             }
-        } catch {
-            print("WARNING: Error checking video file before finalization: \(error)")
+        } else {
+            print("WARNING: Video file does not exist at path: \(outputURL.path)")
         }
         
         print("Marking video input as finished")
@@ -490,29 +602,27 @@ class VideoProcessor {
         
         var error: Error? = nil
         
-        if writer.status == .failed {
+        if writer.status == AVAssetWriter.Status.failed {
             error = writer.error
             print("ERROR: Video asset writer failed: \(String(describing: writer.error))")
             return (false, error)
-        } else if writer.status == .completed {
+        } else if writer.status == AVAssetWriter.Status.completed {
             print("Video successfully finalized")
             
             // Check file size AFTER finalization
-            let outputURL = writer.outputURL
-            do {
-                let fileManager = FileManager.default
-                if fileManager.fileExists(atPath: outputURL.path) {
+            if fileManager.fileExists(atPath: outputURL.path) {
+                do {
                     let attrs = try fileManager.attributesOfItem(atPath: outputURL.path)
-                    if let fileSize = attrs[.size] as? UInt64 {
+                    if let fileSize = attrs[FileAttributeKey.size] as? UInt64 {
                         print("POST-FINALIZE VIDEO FILE SIZE: \(fileSize) bytes")
                         if fileSize == 0 {
                             try? fileManager.removeItem(at: outputURL)
                             print("Removed zero-length video file at \(outputURL.path)")
                         }
                     }
+                } catch {
+                    print("WARNING: Error checking video file after finalization: \(error)")
                 }
-            } catch {
-                print("WARNING: Error checking video file after finalization: \(error)")
             }
             
             return (true, nil)

@@ -239,4 +239,60 @@ class CaptureSessionManager {
     func getStreamConfiguration() -> SCStreamConfiguration? {
         return streamConfig
     }
+    
+    // Helper function to initialize the capture system before actual recording
+    func addDummyCapture() async throws {
+        print("Initializing capture system with warmup frame...")
+        
+        // Create a small dummy display content
+        let dummyContent = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        
+        // Only proceed if we have displays
+        guard let firstDisplay = dummyContent.displays.first else {
+            print("No displays found for dummy capture")
+            return
+        }
+        
+        // Create a simple filter for the dummy capture
+        let dummyFilter = SCContentFilter(display: firstDisplay, excludingWindows: [])
+        
+        // Create a minimal configuration
+        let dummyConfig = SCStreamConfiguration()
+        dummyConfig.width = 320
+        dummyConfig.height = 240
+        dummyConfig.minimumFrameInterval = CMTime(value: 1, timescale: 5)
+        dummyConfig.queueDepth = 1
+        
+        // Use a class for the capture handler
+        class DummyCaptureHandler: NSObject, SCStreamOutput {
+            var receivedFrame = false
+            
+            func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+                if type == .screen && !receivedFrame {
+                    receivedFrame = true
+                    print("✓ Received dummy initialization frame")
+                }
+            }
+        }
+        
+        let dummyHandler = DummyCaptureHandler()
+        
+        // Create a temporary stream
+        let dummyStream = SCStream(filter: dummyFilter, configuration: dummyConfig, delegate: nil)
+        
+        // Add output with a dedicated queue
+        let dummyQueue = DispatchQueue(label: "it.didyouget.dummyCaptureQueue", qos: .userInitiated)
+        try dummyStream.addStreamOutput(dummyHandler, type: .screen, sampleHandlerQueue: dummyQueue)
+        
+        // Start capture very briefly
+        try await dummyStream.startCapture()
+        
+        // Wait a moment to receive at least one frame
+        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        
+        // Stop the dummy capture
+        try await dummyStream.stopCapture()
+        
+        print("Dummy capture completed successfully")
+    }
 }

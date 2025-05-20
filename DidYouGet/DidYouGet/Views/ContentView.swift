@@ -18,6 +18,7 @@ struct ContentView: View {
                         Text(timeString(from: recordingManager.recordingDuration))
                             .font(.system(.title3, design: .monospaced))
                             .foregroundColor(.primary)
+                            .id("timer-\(Int(recordingManager.recordingDuration))") // Force refresh with changing ID
                         
                         Text(recordingManager.isPaused ? "Recording paused" : "Recording")
                             .font(.caption)
@@ -81,9 +82,12 @@ struct ContentView: View {
                     .help("Start recording (⌘⇧R)")
                 } else {
                     HStack(spacing: 8) {
-                        // Stop button
+                        // Stop button with direct state handling
                         Button(action: {
-                            // Execute stop asynchronously without altering the state first
+                            print("Stop button clicked - requesting stop via RecordingManager")
+                            
+                            // The RecordingManager.stopRecording() will handle all state changes
+                            // and UI updates via its @Published properties.
                             Task(priority: .userInitiated) {
                                 await recordingManager.stopRecording()
                             }
@@ -96,6 +100,7 @@ struct ContentView: View {
                         }
                         .buttonStyle(PlainButtonStyle())
                         .help("Stop recording")
+                        .disabled(recordingManager.isStoppingProcessActive)
                         
                         // Pause/Resume button
                         Button(action: {

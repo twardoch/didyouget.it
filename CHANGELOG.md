@@ -2,12 +2,12 @@
 
 All notable changes to Did You Get It will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
 ### Fixed
+
 - Fixed UI responsiveness issues that caused the app to become unresponsive after clicking Record
 - Fixed timer initialization issues that prevented the recording timer from starting
 - Implemented immediate UI state updates during stop recording process to ensure accurate feedback to the user
@@ -21,8 +21,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed potential thread synchronization issues in video frame processing pipeline
 - Improved error detection and handling throughout the recording process
 - Enhanced validation of buffer integrity before processing to prevent empty files
+- Fixed recording timer not starting properly by using DispatchQueue.main.async instead of Task { @MainActor in }
+- Fixed Stop button not changing back to Record after clicking by improving UI state updates and additional logging
+- Fixed empty folder creation issue by adding placeholder file creation and proper metadata
+- Fixed zero-length MOV file issue by improving sample buffer management and adding fallback frames
+- Added more robust file synchronization and status monitoring for video recording
+- Fixed Record button not being clickable after stopping a recording by implementing a comprehensive state reset system:
+  - Created a dedicated forceFullReset() method to ensure complete cleanup of all recording resources
+  - Enhanced stopRecording to properly release all resources and reset state completely
+  - Added emergency reset capabilities to the Stop button's action to ensure immediate UI responsiveness
+  - Fixed state corruption issues that prevented restarting recording after stopping
+  - Added multiple verification checks and logging throughout the state transition process
+  - Improved object cleanup during recording stop to release system resources properly
+- **Recording Lifecycle Refactor**: Overhauled the start/stop recording logic in `RecordingManager` and `ContentView` to improve robustness and resolve several critical issues:
+    - Centralized stop sequence control within `RecordingManager.stopRecording()`.
+    - Ensured the core cleanup function (`stopRecordingAsyncInternal`) always runs its full course if a recording was active, addressing issues with incomplete file finalization (empty JSON/MOV files).
+    - Guaranteed that `forceFullReset()` is always called after any stop attempt, ensuring a consistently clean state for subsequent recordings and fixing the unresponsive Record button after stopping.
+    - Simplified `ContentView`'s Stop button to only delegate to `recordingManager.stopRecording()`, removing direct state manipulation from the view.
+    - Corrected timer operation by removing a redundant `.onReceive(timerPublisher)` in `ContentView`, now relying solely on the `@Published recordingDuration` property for UI updates.
 
 ### Added
+
 - Initial project structure and build configuration
 - Basic SwiftUI application with menu bar interface
 - Core recording manager architecture
@@ -61,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic cleanup of empty recording folders after recording
 
 ### Changed
+
 - Updated .gitignore for Swift/macOS development
 - Enhanced error handling to address file creation issues, ensuring output directories are properly validated
 - Improved diagnostics for recording processes, including permission checks and better error reporting
@@ -113,8 +133,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed preferences access issues during recording session setup
 - Added more robust bitrate and quality settings based on selected preferences
 - Improved handling of video dimensions for Retina displays
-- Fixed bug where `RecordingManager` did not set `isRecording` after starting,
-  preventing timer and output files from being produced
+- Fixed bug where `RecordingManager` did not set `isRecording` after starting, preventing timer and output files from being produced
 - Fixed UI freeze when starting a recording by moving capture session setup off the main thread and initializing the timer after setup.
 - Recording files and timer now start correctly once capture begins.
 - Fixed critical issue with recording state management that prevented recording from starting properly.
@@ -138,8 +157,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed buffer validation checks in SCStreamFrameOutput to prevent processing invalid frames
   - Added proper handling of pixel buffer validations for video frames
 
-
 ### Planned
+
 - Full featured area selection tool with visual selection interface
 - Advanced file output with additional configurable quality presets
 - Recording countdown timer before starting capture

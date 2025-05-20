@@ -1,48 +1,23 @@
 ---
-description: Handles context-specific data linking and reference processing using the @ symbol system for screen, audio and input linking
-globs: DidYouGet/DidYouGet/Models/InputTracking/*.swift,DidYouGet/DidYouGet/Models/PreferencesManager.swift
+description: Defines the context-aware reference system for marking and resolving dynamic content inclusions using @ syntax
+globs: **/*.swift,**/*.json
 alwaysApply: false
 ---
 
 
 # reference-resolution
 
-The reference resolution system provides linkage between different recording components through an @ symbol reference mechanism.
+The specification does not contain detailed information about a reference resolution system or @ syntax-based content inclusions. The provided technical details focus on recording functionality, input tracking, and audio/video processing without mentioning reference resolution mechanisms.
 
-## Core Reference Types (Importance: 95)
+Based on the available files and structure, there is no explicit reference system implementation documented in the core components:
 
-`@screen` - Links to active screen recording sessions
-- Connects captured screen regions to recording metadata
-- References display identifiers for multi-monitor setups 
+- RecordingManager.swift
+- InputTracking/
+- Recording/
+- Models/
 
-`@audio` - Links audio device references
-- Maps selected audio input devices to recording sessions
-- Maintains synchronization timestamps with video streams
+While the project contains logic for coordinating multiple data streams (video, audio, input events), there is no indication of a reference-based inclusion or resolution system.
 
-`@input` - Links input tracking references
-- Binds mouse/keyboard event streams to recording context
-- Maps input events to screen coordinates and window focus
-
-## Reference Context Resolution (Importance: 85)
-
-Input Event Binding:
-```
-@screen(main) -> Links to primary display context
-@screen(secondary) -> Links to additional displays
-@input.mouse -> Mouse event stream for active context
-@input.keyboard -> Keyboard event stream for active context
-```
-
-Recording Device Resolution:
-```
-@audio(device:built-in) -> System audio device
-@audio(device:external) -> External audio inputs
-```
-
-## State Management (Importance: 80)
-
-- References maintain active/inactive states
-- Context switching preserves reference integrity
-- Reference garbage collection on context termination
+Importance Score: 0 (No reference resolution system documented in the specification)
 
 $END$

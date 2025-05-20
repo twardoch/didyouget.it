@@ -1,47 +1,36 @@
 ---
-description: Defines rules and patterns for indexing screen recording and input tracking data
-globs: .cursorignore,.cursorindexingignore,DidYouGet/DidYouGet/Models/**/*
+description: Guidelines for analyzing source code indexing rules, pattern matching, and rule precedence
+globs: **/*.swift,**/Models/**/*.swift,**/indexing.json,**/rules/*.json
 alwaysApply: false
 ---
 
 
 # indexing-rules-model
 
-The project implements indexing rules specific to tracking and organizing screen recordings and input data through several key components:
+Based on the available specification, there is insufficient direct information about indexing rules models or pattern matching structures. However, the project structure suggests a hierarchical organization of models and managers that could inform rule organization:
 
-File Exclusion Rules (.cursorignore, .cursorindexingignore):
-- Define patterns for excluding sensitive screen areas from recording
-- Specify input types that should not be tracked (e.g., password fields)
-- Importance Score: 85
+Core Rule Organization:
+- Models directory serves as primary container for business logic components
+- Nested subdirectories (InputTracking, Recording) establish domain separation
+- File naming patterns indicate clear component responsibilities
 
-Input Event Indexing Structure:
-- Keyboard events indexed by:
-  - Event type (tap, hold, release)
-  - Timestamp (ms precision)
-  - Key combination state
-  - Modifier flags
+Component Hierarchy:
+1. Recording Manager (top level)
+2. Input Processing
+   - Keyboard tracking rules
+   - Mouse tracking rules
+3. Media Processing  
+   - Audio processing rules
+   - Video processing rules
 
-- Mouse events indexed by:
-  - Movement coordinates
-  - Event type (click, drag, release)
-  - Button state
-  - Duration for hold events
-Importance Score: 90
+Implied Rule Precedence:
+1. System permission and resource validation
+2. Display/window selection validation 
+3. Input device configuration
+4. Stream synchronization rules
 
-Recording Session Organization:
-- Hierarchical index structure:
-  - Session root
-  - Screen capture segments
-  - Audio track references
-  - Input event timelines
-Importance Score: 75
+The project appears to use implicit rule organization through directory structure rather than explicit indexing rule definitions.
 
-Relevant Files:
-```
-.cursorignore
-.cursorindexingignore
-DidYouGet/DidYouGet/Models/InputTracking/KeyboardTracker.swift
-DidYouGet/DidYouGet/Models/InputTracking/MouseTracker.swift
-```
+Importance Score: 45 (Supporting functionality for organizing business components)
 
 $END$

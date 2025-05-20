@@ -283,6 +283,11 @@
 
 ### Recent Updates
 
+- Fixed Record button not working after clicking Stop by implementing a comprehensive state reset system
+  - Created a dedicated forceFullReset() method to ensure complete cleanup of all recording resources
+  - Enhanced stopRecording to properly release all resources and reset state completely
+  - Added emergency reset capabilities to the Stop button's action to ensure immediate UI responsiveness
+  - Fixed state corruption issues that prevented restarting recording after stopping
 - Fixed UI responsiveness issues and recording output problems in RecordingManager
 - Resolved stop-recording state bug that prevented finalization and left empty folders
 - Resolved timer initialization that prevented the recording timer from starting
@@ -332,7 +337,15 @@
 
 ### Current Issues Fixed
 
-1. **Empty .mov files** - Fixed issues in the video capture pipeline that were causing empty video files
+1. **Record button not working after stopping** - Fixed comprehensive state reset system to allow restarting recordings
+   - Created a dedicated forceFullReset() method in RecordingManager to ensure complete cleanup
+   - Modified the Stop button's action to immediately reset recording state
+   - Enhanced stopRecording method to properly release all resources and reset state
+   - Fixed state corruption issues that prevented restarting recording after stopping
+   - Added multiple verification checks and logging throughout the state transition process
+   - Implemented better object cleanup during recording stop to properly release system resources
+
+2. **Empty .mov files** - Fixed issues in the video capture pipeline that were causing empty video files
    - Set isRecording flag before capture session setup to ensure frames are processed
    - Removed isRecording check in processSampleBuffer to ensure frames are captured during initialization
    - Enhanced frame processing with high priority task dispatching
@@ -342,20 +355,20 @@
    - Fixed OSStatus comparison to use the correct noErr constant
    - Added extensive debugging and logging of file sizes and writer states
 
-2. **Recording state persistence** - Fixed issue where recording state wasn't maintained when app UI is hidden/shown
+3. **Recording state persistence** - Fixed issue where recording state wasn't maintained when app UI is hidden/shown
    - Modified ContentView's onAppear behavior to check if recording is active before resetting state
    - Ensured recording continues properly when UI is hidden and then shown again
 
-3. **Frame processing in SCStream handler** - Improved frame processing to ensure proper video capture
+4. **Frame processing in SCStream handler** - Improved frame processing to ensure proper video capture
    - Added frame counter to SCStreamFrameOutput to better monitor frame reception
    - Improved task priority for frame processing to ensure real-time handling
    - Enhanced logging throughout the recording pipeline for better diagnostics
    - Fixed URL handling in finalization code to prevent optional unwrapping issues
 
-4. **Missing JSON files** - Enhanced input tracking initialization, file creation, and error handling
-5. **File verification** - Added more robust checks to verify file existence and contents after recording
-6. **Preferences handling** - Fixed issues where preferences weren't correctly accessed during recording 
-7. **Recording state bug** - Fixed issue where recording state wasn't set after starting, causing timer and output files to fail
+5. **Missing JSON files** - Enhanced input tracking initialization, file creation, and error handling
+6. **File verification** - Added more robust checks to verify file existence and contents after recording
+7. **Preferences handling** - Fixed issues where preferences weren't correctly accessed during recording 
+8. **Recording state bug** - Fixed issue where recording state wasn't set after starting, causing timer and output files to fail
 
 ### Known Issues
 
@@ -366,6 +379,7 @@
 - ~~FIXED: Timer does not start running after clicking Record~~
 - ~~FIXED: Stop button does not change back to Record button after clicking Stop~~
 - ~~FIXED: App creates empty folders with no files inside~~
+- ~~FIXED: After clicking Record and then Stop, the Record button appears but cannot be clicked again~~
 
 ### Next Steps
 

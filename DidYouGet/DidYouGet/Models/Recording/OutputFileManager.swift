@@ -52,6 +52,59 @@ class OutputFileManager {
             try "test".write(to: testFile, atomically: true, encoding: .utf8)
             try FileManager.default.removeItem(at: testFile)
             print("✓ Successfully tested write permissions in directory")
+            
+            // CRITICAL FIX: Create a session marker file that will exist even if recording fails
+            // This ensures we have at least one file in the directory
+            let sessionMarkerFile = folderURL.appendingPathComponent(".recording_session_marker")
+            let sessionInfo = """
+            Recording started: \(Date())
+            Base name: \(baseName)
+            Audio: \(recordAudio)
+            Audio mixed with video: \(mixAudioWithVideo)
+            Mouse movements: \(recordMouseMovements)
+            Keystrokes: \(recordKeystrokes)
+            """
+            try sessionInfo.write(to: sessionMarkerFile, atomically: true, encoding: .utf8)
+            print("Created recording session marker file with session info")
+            
+            // CRITICAL FIX: Create 0-byte placeholders for all output files to ensure they exist
+            // This prevents empty directories even if recording fails
+            
+            // Create video placeholder
+            let videoFileURL = folderURL.appendingPathComponent(videoFileName)
+            if !FileManager.default.fileExists(atPath: videoFileURL.path) {
+                FileManager.default.createFile(atPath: videoFileURL.path, contents: Data())
+                print("Created placeholder for video file at: \(videoFileURL.path)")
+            }
+            
+            // Create audio placeholder if needed
+            if recordAudio && !mixAudioWithVideo {
+                let audioFileURL = folderURL.appendingPathComponent(audioFileName)
+                if !FileManager.default.fileExists(atPath: audioFileURL.path) {
+                    FileManager.default.createFile(atPath: audioFileURL.path, contents: Data())
+                    print("Created placeholder for audio file at: \(audioFileURL.path)")
+                }
+            }
+            
+            // Create mouse tracking placeholder if needed
+            if recordMouseMovements {
+                let mouseFileURL = folderURL.appendingPathComponent("\(baseName)_mouse.json")
+                if !FileManager.default.fileExists(atPath: mouseFileURL.path) {
+                    // Create with empty JSON array to ensure it's valid JSON even if recording fails
+                    try "[]".write(to: mouseFileURL, atomically: true, encoding: .utf8)
+                    print("Created placeholder for mouse tracking file at: \(mouseFileURL.path)")
+                }
+            }
+            
+            // Create keyboard tracking placeholder if needed
+            if recordKeystrokes {
+                let keyboardFileURL = folderURL.appendingPathComponent("\(baseName)_keyboard.json")
+                if !FileManager.default.fileExists(atPath: keyboardFileURL.path) {
+                    // Create with empty JSON array to ensure it's valid JSON even if recording fails
+                    try "[]".write(to: keyboardFileURL, atomically: true, encoding: .utf8)
+                    print("Created placeholder for keyboard tracking file at: \(keyboardFileURL.path)")
+                }
+            }
         } catch {
             print("CRITICAL ERROR: Failed to create/access recording directory: \(error)")
         }

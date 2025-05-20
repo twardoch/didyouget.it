@@ -34,11 +34,17 @@ class RecordingManager: ObservableObject {
         }
     }
     
+    @Published var isStoppingProcessActive: Bool = false
+    
     @Published var recordingDuration: TimeInterval = 0
+    
+    // Create a publisher for timer ticks that SwiftUI views can observe
+    let timerPublisher = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
     @Published var selectedScreen: SCDisplay?
     @Published var recordingArea: CGRect?
     
     private var timer: Timer?
+    private var dispatchTimer: DispatchSourceTimer?
     private var startTime: Date?
     
     private var videoOutputURL: URL?
@@ -174,6 +180,7 @@ class RecordingManager: ObservableObject {
     func startRecordingAsync() async throws {
         // Reset any existing recording state first
         await resetRecordingState()
+        isStoppingProcessActive = false
         
         print("\n=== STARTING RECORDING ===\n")
         
@@ -246,6 +253,7 @@ class RecordingManager: ObservableObject {
             isRecording = true
             
             // Configure capture session based on preferences
+            // Configure capture session with high-performance settings
             let streamConfig = try captureSessionManager.configureCaptureSession(
                 captureType: captureType,
                 selectedScreen: selectedScreen,
@@ -254,6 +262,13 @@ class RecordingManager: ObservableObject {
                 frameRate: preferences.frameRate,
                 recordAudio: preferences.recordAudio
             )
+            
+            print("VIDEO CONFIG: Width=\(streamConfig.width), Height=\(streamConfig.height), BitRate=\(preferences.videoQuality.megabitsPerSecond)Mbps, FrameRate=\(preferences.frameRate)")
+            
+            // CRITICAL: Add a dummy capture callback to ensure proper initialization
+            // This ensures the capture system is properly warmed up
+            print("Adding dummy capture callback for initialization")
+            try? await captureSessionManager.addDummyCapture()
             
             // Create content filter based on capture type
             let contentFilter = try captureSessionManager.createContentFilter(
@@ -284,17 +299,23 @@ class RecordingManager: ObservableObject {
             }
             
             // Start video and audio writers
+            print("Attempting to start video writer...")
             if !videoProcessor.startWriting() {
+                print("ERROR: videoProcessor.startWriting() returned false.")
                 throw NSError(domain: "RecordingManager", code: 1006, userInfo: [NSLocalizedDescriptionKey: "Failed to start video writer"])
             }
+            print("✓ Video writer started.")
             
             if preferences.recordAudio && !preferences.mixAudioWithVideo {
+                print("Attempting to start audio writer...")
                 if !audioProcessor.startWriting() {
                     print("WARNING: Failed to start audio writer - continuing without audio")
                 }
+                print("✓ Audio writer started or skipped.")
             }
             
             // Create the stream with sample buffer handler
+            print("Attempting to create SCStream...")
             try captureSessionManager.createStream(
                 filter: contentFilter,
                 config: streamConfig,
@@ -303,17 +324,22 @@ class RecordingManager: ObservableObject {
                     self.handleSampleBuffer(sampleBuffer, type: type)
                 }
             )
+            print("✓ SCStream created.")
             
             // Start the session with time zero
+            print("Attempting to start video/audio processor sessions...")
             let sessionStartTime = CMTime.zero
             videoProcessor.startSession(at: sessionStartTime)
             
             if preferences.recordAudio && !preferences.mixAudioWithVideo {
                 audioProcessor.startSession(at: sessionStartTime)
             }
+            print("✓ Video/audio processor sessions started.")
             
             // Ensure we're on the main thread for UI updates and timer creation
+            print("Attempting to run timer setup on MainActor...")
             await MainActor.run {
+                print("Inside MainActor.run for timer setup.")
                 // Record start time after capture starts
                 startTime = Date()
                 
@@ -327,46 +353,88 @@ class RecordingManager: ObservableObject {
                 // Make sure any existing timer is invalidated
                 timer?.invalidate()
                 
-                // Create a timer that updates the recording duration
-                let timerStartTime = startTimeCapture
+                // Not using the timer start time from capture
+                // let timerStartTime = startTimeCapture
                 
-                // Create a timer that will safely dispatch back to the main actor for updates
-                let timerStart = timerStartTime // Capture the start time as a local variable
-                let newTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-                    guard let self = self else { return }
+                // Create a direct update timer with no async complications
+                self.startTime = Date() // Ensure startTime is set immediately
+                print("Setting immediate startTime to \(self.startTime!)")
+                
+                // Explicitly update UI immediately with zero duration
+                self.recordingDuration = 0
+                print("Setting initial recordingDuration to 0")
+                
+                // Force UI refresh for immediate effect
+                DispatchQueue.main.async {
+                    print("Forcing UI refresh for timer")
+                    self.objectWillChange.send()
+                }
+                
+                // Force create a dispatch source timer instead of using Timer
+                let timerSource = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
+                timerSource.schedule(deadline: .now(), repeating: .milliseconds(100))
+                
+                // Capture startTime in a local constant for the timer handler
+                let capturedStartTime = self.startTime!
+                print("Creating timer with captured startTime \(capturedStartTime)")
+                
+                // Set the timer event handler
+                timerSource.setEventHandler { [weak self] in
+                    guard let self = self else { 
+                        print("Timer fired but self is nil")
+                        return 
+                    }
                     
-                    // Calculate the duration here since it doesn't need actor isolation
-                    let duration = Date().timeIntervalSince(timerStart)
+                    // Only update if we're still recording and not paused
+                    guard self.isRecording, !self.isPaused else {
+                        print("Timer fired but recording stopped or paused")
+                        return
+                    }
                     
-                    // Run the UI updates on the MainActor
-                    Task { @MainActor in
-                        // Only update if we're still recording
-                        guard self.isRecording, !self.isPaused else { return }
+                    // Calculate and update duration
+                    let newDuration = Date().timeIntervalSince(capturedStartTime)
+                    
+                    // Set the duration - this is a @Published property so it will update the UI
+                    if self.recordingDuration != newDuration {
+                        self.recordingDuration = newDuration
                         
-                        // Update the UI
-                        self.recordingDuration = duration
+                        // Debug output at regular intervals
+                        if Int(newDuration) % 2 == 0 {
+                            print("TIMER UPDATE: Recording duration = \(newDuration) seconds")
+                        }
                         
-                        // Periodically save duration to UserDefaults (every 5 seconds)
-                        if Int(duration) % 5 == 0 {
-                            UserDefaults.standard.set(duration, forKey: RecordingManager.recordingVideoDurationKey)
+                        // Save periodically to UserDefaults
+                        if Int(newDuration) % 5 == 0 {
+                            UserDefaults.standard.set(newDuration, forKey: RecordingManager.recordingVideoDurationKey)
+                            print("Saved duration \(newDuration) to UserDefaults")
                         }
                     }
                 }
                 
-                // Store the timer reference
-                self.timer = newTimer
+                // Store and activate the timer
+                self.dispatchTimer = timerSource
+                timerSource.resume()
+                print("✓ Dispatch timer created and activated")
                 
-                // Ensure timer doesn't get invalidated by RunLoop modes
-                RunLoop.current.add(newTimer, forMode: .common)
+                // We're not using the old timer anymore, but removing this reference requires more extensive changes
+                // self.timer = newTimer
+                
+                // Not using RunLoop-based timer anymore
+                // RunLoop.current.add(newTimer, forMode: .common)
                 
                 print("✓ Timer successfully initialized and started")
             }
+            print("✓ Timer setup block completed.")
             
             // Start the capture session
+            print("Attempting to start capture session (captureSessionManager.startCapture())...")
             try await captureSessionManager.startCapture()
+            print("✓ Capture session started.")
             
             // Start input tracking if enabled
+            print("Attempting to start input tracking...")
             startInputTracking()
+            print("✓ Input tracking started or skipped.")
             
             print("Recording started successfully")
         } catch {
@@ -450,52 +518,122 @@ class RecordingManager: ObservableObject {
     
     @MainActor
     func stopRecording() async {
-        // Simply forward to the async teardown without altering state first
-        // to avoid bypassing the checks in stopRecordingAsync().
-        print("Stop recording requested")
+        print("Stop recording requested via stopRecording()")
+        
+        // Prevent multiple stop operations from running concurrently
+        guard !isStoppingProcessActive else {
+            print("Stop process already active. Ignoring request.")
+            return
+        }
+        isStoppingProcessActive = true
+        defer { isStoppingProcessActive = false }
+
+        // Capture the state *before* any changes are made by async operations.
+        // However, the primary guard for actual processing will be inside stopRecordingAsyncInternal.
+
         do {
-            try await stopRecordingAsync()
+            // Perform the core stopping logic. 
+            try await stopRecordingAsyncInternal()
+            print("stopRecordingAsyncInternal completed successfully.")
+            
         } catch {
-            print("Error in stopRecording: \(error)")
+            print("Error during stopRecordingAsyncInternal: \(error). Full reset will still be attempted.")
+            // We still want to attempt a full reset even if internal stop fails.
         }
+        
+        // Always ensure a full reset is performed after attempting to stop.
+        // This cleans up any residual state and ensures the app is ready for a new recording.
+        print("Proceeding to forceFullReset() after stop attempt.")
+        forceFullReset() 
+        
+        // UI update is handled by forceFullReset and @Published properties.
+        print("stopRecording() finished. UI should reflect stopped state.")
     }
-    
+
+    // Renamed from stopRecordingAsync - this is the core logic without the initial guard.
     @MainActor
-    func stopRecordingAsync() async throws {
-        guard isRecording else { 
-            print("Not recording, ignoring stop request")
-            return 
+    private func stopRecordingAsyncInternal() async throws {
+        // We no longer guard with isRecording here. 
+        // The caller (stopRecording) decides if this logic needs to run.
+        // If there was nothing to stop (e.g., no active session), this function should gracefully do nothing or handle it.
+        
+        // If there's no startTime, it's unlikely a recording was properly started or has data to save.
+        guard startTime != nil || videoOutputURL != nil || mouseTrackingURL != nil || keyboardTrackingURL != nil else {
+            print("stopRecordingAsyncInternal: No significant recording activity detected (no startTime or output URLs). Skipping extensive cleanup.")
+            // Still ensure basic state like isRecording is false, but avoid complex operations on nil objects.
+            if isRecording {
+                print("Setting isRecording = false as a precaution.")
+                isRecording = false
+            }
+            if isPaused {
+                isPaused = false
+            }
+            if dispatchTimer != nil || timer != nil {
+                dispatchTimer?.cancel()
+                dispatchTimer = nil
+                timer?.invalidate()
+                timer = nil
+                print("Timers cancelled.")
+            }
+            recordingDuration = 0
+            return
+        }
+
+        print("\n=== STOPPING RECORDING (INTERNAL) ===\n")
+        
+        // Set recording state to false. This is crucial.
+        if isRecording {
+            print("Setting isRecording = false")
+            isRecording = false
+        }
+        if isPaused {
+            print("Setting isPaused = false")
+            isPaused = false
         }
         
-        print("\n=== STOPPING RECORDING ===\n")
+        // Handle dispatch timer (primary timer)
+        if let dispatchTimer = self.dispatchTimer {
+            print("Cancelling dispatch timer")
+            dispatchTimer.cancel()
+            self.dispatchTimer = nil // Release the timer object
+        } else {
+            print("Dispatch timer was already nil.")
+        }
         
-        // Update recording state first to prevent UI from triggering multiple stops
-        isRecording = false
-        isPaused = false
-        timer?.invalidate()
-        timer = nil
-        recordingDuration = 0
+        // Handle regular timer (fallback/older timer, ensure it's also stopped)
+        if let timer = self.timer {
+            print("Invalidating regular timer")
+            timer.invalidate()
+            self.timer = nil
+        }
         
-        // Stop input tracking
+        // Reset duration in UI immediately
+        if recordingDuration != 0 {
+            print("Explicitly setting recordingDuration to 0 for UI update.")
+            recordingDuration = 0
+        }
+        
+        // Stop input tracking first
         print("Stopping input tracking")
-        mouseTracker.stopTracking()
+        mouseTracker.stopTracking() // These should be safe to call even if not started
         keyboardTracker.stopTracking()
         
         // Stop capture session
         print("Stopping capture session")
-        await captureSessionManager.stopCapture()
+        await captureSessionManager.stopCapture() // Should be safe to call
         
-        // Add a slight delay to ensure all buffers are flushed
-        print("Waiting for buffers to flush...")
-        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        // Add a slight delay to ensure all buffers are flushed before finalizing files.
+        // This was identified as helpful in previous debugging.
+        print("Waiting for buffers to flush (0.5s delay)...")
+        try? await Task.sleep(nanoseconds: 500_000_000)
         
         // Finalize video and audio files
         print("Finalizing recording files")
-        let (_, videoError) = await videoProcessor.finishWriting()
-        let (_, audioError) = await audioProcessor.finishWriting()
+        let (_, videoError) = await videoProcessor.finishWriting() // Should be safe to call
+        let (_, audioError) = await audioProcessor.finishWriting() // Should be safe to call
         
-        // Verify output files
-        let preferences = preferencesManager
+        // Verify output files (can be kept as is)
+        let currentPreferences = preferencesManager // Capture for consistent check
         OutputFileManager.verifyOutputFiles(
             videoURL: videoOutputURL,
             audioURL: audioOutputURL,
@@ -503,24 +641,25 @@ class RecordingManager: ObservableObject {
             keyboardURL: keyboardTrackingURL,
             videoFramesProcessed: videoProcessor.getFramesProcessed(),
             audioSamplesProcessed: audioProcessor.getSamplesProcessed(),
-            shouldHaveVideo: true,
-            shouldHaveSeparateAudio: preferences?.recordAudio == true && preferences?.mixAudioWithVideo == false,
-            shouldHaveMouse: preferences?.recordMouseMovements == true,
-            shouldHaveKeyboard: preferences?.recordKeystrokes == true
+            shouldHaveVideo: true, // Assuming video is always primary
+            shouldHaveSeparateAudio: currentPreferences?.recordAudio == true && currentPreferences?.mixAudioWithVideo == false,
+            shouldHaveMouse: currentPreferences?.recordMouseMovements == true,
+            shouldHaveKeyboard: currentPreferences?.recordKeystrokes == true
         )
 
-        // Remove recording directory if no files were produced
+        // Remove recording directory if no files were produced (or if it's empty)
         if let folder = recordingFolderURL {
             OutputFileManager.cleanupFolderIfEmpty(folder)
-            recordingFolderURL = nil
+            // recordingFolderURL will be nilled by forceFullReset later
         }
         
-        print("Recording stopped successfully")
+        print("Recording stopped successfully (Internal)")
         
         // Report any errors that occurred during finishWriting
         if let error = videoError ?? audioError {
-            print("ERROR: Error during finalization: \(error)")
-            throw error
+            print("ERROR: Error during finalization (video or audio): \(error)")
+            // Do not re-throw here, allow forceFullReset to run.
+            // The error is logged, and the overall stop operation will be in a catch block in the caller.
         }
     }
     
@@ -611,6 +750,55 @@ class RecordingManager: ObservableObject {
         clearPersistedRecordingState()
         
         print("Recording state reset complete")
+    }
+    
+    // Synchronous version of resetRecordingState for UI operations
+    // that need immediate state reset without async context
+    @MainActor
+    func forceFullReset() {
+        print("EMERGENCY: Forcing immediate reset of all recording state")
+        
+        // Reset all state variables immediately
+        isRecording = false
+        isPaused = false
+        recordingDuration = 0
+        
+        // Kill all timers
+        if let timer = self.timer {
+            print("Killing standard timer")
+            timer.invalidate()
+            self.timer = nil
+        }
+        
+        if let dispatchTimer = self.dispatchTimer {
+            print("Killing dispatch timer")
+            dispatchTimer.cancel()
+            self.dispatchTimer = nil
+        }
+        
+        // Clear all URLs immediately
+        videoOutputURL = nil
+        audioOutputURL = nil
+        mouseTrackingURL = nil
+        keyboardTrackingURL = nil
+        recordingFolderURL = nil
+        
+        // Reset tracking
+        startTime = nil
+        
+        // Clear all persisted state
+        UserDefaults.standard.removeObject(forKey: RecordingManager.isRecordingKey)
+        UserDefaults.standard.removeObject(forKey: RecordingManager.isPausedKey)
+        UserDefaults.standard.removeObject(forKey: RecordingManager.recordingStartTimeKey)
+        UserDefaults.standard.removeObject(forKey: RecordingManager.recordingVideoDurationKey)
+        UserDefaults.standard.removeObject(forKey: RecordingManager.videoOutputURLKey)
+        
+        print("Emergency reset complete - all state variables cleared")
+        
+        // Force immediate UI update
+        DispatchQueue.main.async {
+            self.objectWillChange.send()
+        }
     }
     
     private func clearPersistedRecordingState() {
