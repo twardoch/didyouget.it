@@ -8,8 +8,26 @@ import CoreMedia
 @available(macOS 12.3, *)
 @MainActor
 class RecordingManager: ObservableObject {
-    @Published var isRecording = false
-    @Published var isPaused = false
+    // Key constants for UserDefaults
+    private static let isRecordingKey = "DidYouGetIt.isRecording"
+    private static let isPausedKey = "DidYouGetIt.isPaused"
+    private static let recordingStartTimeKey = "DidYouGetIt.recordingStartTime"
+    private static let recordingVideoDurationKey = "DidYouGetIt.recordingVideoDuration"
+    private static let videoOutputURLKey = "DidYouGetIt.videoOutputURL"
+    
+    // Published properties with persistence
+    @Published var isRecording: Bool = false {
+        didSet {
+            UserDefaults.standard.set(isRecording, forKey: RecordingManager.isRecordingKey)
+        }
+    }
+    
+    @Published var isPaused: Bool = false {
+        didSet {
+            UserDefaults.standard.set(isPaused, forKey: RecordingManager.isPausedKey)
+        }
+    }
+    
     @Published var recordingDuration: TimeInterval = 0
     @Published var selectedScreen: SCDisplay?
     @Published var recordingArea: CGRect?
@@ -33,6 +51,10 @@ class RecordingManager: ObservableObject {
     // Statistics for diagnostics
     private var videoFramesProcessed: Int = 0
     private var audioSamplesProcessed: Int = 0
+    
+    // Frame tracking for detailed logging
+    private var videoFrameLogCounter: Int = 0
+    private var audioSampleLogCounter: Int = 0
     
     @Published var availableDisplays: [SCDisplay] = []
     @Published var availableWindows: [SCWindow] = []
@@ -79,6 +101,9 @@ class RecordingManager: ObservableObject {
     init() {
         print("Initializing RecordingManager")
         
+        // Load persisted recording state
+        loadPersistedRecordingState()
+        
         // Delay permissions check to avoid initialization crashes
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.checkPermissions()
@@ -86,8 +111,64 @@ class RecordingManager: ObservableObject {
             // Load content after permissions check
             Task { [weak self] in
                 await self?.loadAvailableContent()
+                
+                // If recording was active when app was closed, try to resume
+                if self?.isRecording == true {
+                    print("Recording was active when app was closed - attempting to resume")
+                    self?.resumePersistedRecording()
+                }
             }
         }
+    }
+    
+    private func loadPersistedRecordingState() {
+        // Load recording status
+        if UserDefaults.standard.bool(forKey: RecordingManager.isRecordingKey) {
+            print("Found persisted recording state: recording was active")
+            
+            // Don't set isRecording directly yet, we need to verify and resume first
+            // This prevents UI from showing recording is active before we've properly resumed
+            
+            // Load pause state
+            isPaused = UserDefaults.standard.bool(forKey: RecordingManager.isPausedKey)
+            
+            // Load saved duration if available
+            if let savedTime = UserDefaults.standard.object(forKey: RecordingManager.recordingVideoDurationKey) as? TimeInterval {
+                recordingDuration = savedTime
+                print("Restored recording duration: \(recordingDuration) seconds")
+            }
+            
+            // Load video URL
+            if let urlString = UserDefaults.standard.string(forKey: RecordingManager.videoOutputURLKey) {
+                videoOutputURL = URL(string: urlString)
+                print("Restored video output URL: \(urlString)")
+            }
+        } else {
+            print("No persisted recording was active")
+        }
+    }
+    
+    private func resumePersistedRecording() {
+        // In a real implementation, we would try to reconnect to existing recording
+        // But since that's complex and likely to fail, we'll just stop any old recording
+        
+        print("WARNING: Cannot resume previous recording session - resetting state")
+        
+        // Reset recording state - we can't recover it at this point
+        isRecording = false
+        isPaused = false
+        recordingDuration = 0
+        
+        // Clear persisted state
+        UserDefaults.standard.removeObject(forKey: RecordingManager.isRecordingKey)
+        UserDefaults.standard.removeObject(forKey: RecordingManager.isPausedKey)
+        UserDefaults.standard.removeObject(forKey: RecordingManager.recordingStartTimeKey)
+        UserDefaults.standard.removeObject(forKey: RecordingManager.recordingVideoDurationKey)
+        UserDefaults.standard.removeObject(forKey: RecordingManager.videoOutputURLKey)
+        
+        // Show alert about interrupted recording
+        showAlert(title: "Recording Interrupted", 
+                 message: "The previous recording was interrupted when the application closed. Recording has been stopped.")
     }
     
     func checkPermissions() {
@@ -188,6 +269,11 @@ class RecordingManager: ObservableObject {
 
             // Record start time only after capture starts
             startTime = Date()
+            
+            // Store start time in UserDefaults for persistence
+            UserDefaults.standard.set(startTime!.timeIntervalSince1970, forKey: RecordingManager.recordingStartTimeKey)
+            print("Saved recording start time to UserDefaults: \(startTime!)")
+            
             let startTimeCapture = startTime ?? Date()
             print("Starting recording timer at: \(startTimeCapture)")
             let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
@@ -198,6 +284,11 @@ class RecordingManager: ObservableObject {
 
                 Task { @MainActor in
                     self.recordingDuration = duration
+                    
+                    // Periodically save duration to UserDefaults (every 5 seconds)
+                    if Int(duration) % 5 == 0 {
+                        UserDefaults.standard.set(duration, forKey: RecordingManager.recordingVideoDurationKey)
+                    }
                 }
             }
 
@@ -420,6 +511,10 @@ class RecordingManager: ObservableObject {
             throw NSError(domain: "RecordingManager", code: 1001, userInfo: [NSLocalizedDescriptionKey: "Failed to create video output URL"])
         }
         
+        // Store the URL string for persistence
+        UserDefaults.standard.set(videoURL.absoluteString, forKey: RecordingManager.videoOutputURLKey)
+        print("Saved video output URL to UserDefaults: \(videoURL.absoluteString)")
+        
         // Check and request audio permission if needed
         let shouldRecordAudio = preferencesManager?.recordAudio == true
         if shouldRecordAudio {
@@ -567,13 +662,46 @@ class RecordingManager: ObservableObject {
             }
         }
         
-        // Set up video asset writer
+        // Verify the directory for video output exists and is writable
+        do {
+            let videoDirectory = videoURL.deletingLastPathComponent()
+            var isDirectory: ObjCBool = false
+            
+            if !FileManager.default.fileExists(atPath: videoDirectory.path, isDirectory: &isDirectory) || !isDirectory.boolValue {
+                try FileManager.default.createDirectory(at: videoDirectory, withIntermediateDirectories: true)
+                print("Created directory for video output: \(videoDirectory.path)")
+            }
+            
+            // Test write access
+            let testPath = videoDirectory.appendingPathComponent(".write_test").path
+            try "test".write(toFile: testPath, atomically: true, encoding: .utf8)
+            try FileManager.default.removeItem(atPath: testPath)
+            print("✓ Directory is writable: \(videoDirectory.path)")
+        } catch {
+            print("CRITICAL ERROR: Cannot access or write to video directory: \(error.localizedDescription)")
+            throw NSError(domain: "RecordingManager", code: 1020, 
+                         userInfo: [NSLocalizedDescriptionKey: "Cannot access or write to directory. Please check permissions."])
+        }
+        
+        // Set up video asset writer with extensive error handling
         print("Creating video asset writer with output URL: \(videoURL.path)")
         do {
             videoAssetWriter = try AVAssetWriter(outputURL: videoURL, fileType: .mov)
-            print("Video asset writer created successfully")
+            
+            // Verify the writer was created successfully
+            guard let writer = videoAssetWriter else {
+                throw NSError(domain: "RecordingManager", code: 1021, 
+                             userInfo: [NSLocalizedDescriptionKey: "Failed to create video asset writer - writer is nil"])
+            }
+            
+            // Check writer status
+            if writer.status != .unknown {
+                print("WARNING: Video asset writer has unexpected initial status: \(writer.status.rawValue)")
+            }
+            
+            print("✓ Video asset writer created successfully, initial status: \(writer.status.rawValue)")
         } catch {
-            print("ERROR: Failed to create video asset writer: \(error)")
+            print("CRITICAL ERROR: Failed to create video asset writer: \(error)")
             throw error
         }
         
@@ -674,11 +802,47 @@ class RecordingManager: ObservableObject {
             }
         }
         
-        // Start asset writers
+        // Start asset writers with error checking
+        print("Starting video asset writer...")
+        if videoWriter.status != .unknown {
+            print("WARNING: Video writer has unexpected status before starting: \(videoWriter.status.rawValue)")
+        }
+        
         videoWriter.startWriting()
         
-        if let audioAssetWriter = audioAssetWriter {
-            audioAssetWriter.startWriting()
+        // Verify video writer started successfully
+        if videoWriter.status != .writing {
+            print("CRITICAL ERROR: Video writer failed to start writing. Status: \(videoWriter.status.rawValue)")
+            if let error = videoWriter.error {
+                print("CRITICAL ERROR: Video writer error: \(error.localizedDescription)")
+                throw error
+            } else {
+                throw NSError(domain: "RecordingManager", code: 1022, 
+                             userInfo: [NSLocalizedDescriptionKey: "Failed to start video writer - not in writing state"])
+            }
+        } else {
+            print("✓ Video writer started successfully, status: \(videoWriter.status.rawValue)")
+        }
+        
+        // Start audio writer if needed
+        if let audioWriter = audioAssetWriter {
+            print("Starting audio asset writer...")
+            if audioWriter.status != .unknown {
+                print("WARNING: Audio writer has unexpected status before starting: \(audioWriter.status.rawValue)")
+            }
+            
+            audioWriter.startWriting()
+            
+            // Verify audio writer started successfully
+            if audioWriter.status != .writing {
+                print("WARNING: Audio writer failed to start writing. Status: \(audioWriter.status.rawValue)")
+                if let error = audioWriter.error {
+                    print("WARNING: Audio writer error: \(error.localizedDescription)")
+                    // Continue without audio rather than throwing error
+                } 
+            } else {
+                print("✓ Audio writer started successfully, status: \(audioWriter.status.rawValue)")
+            }
         }
         
         // Start capturing
@@ -759,24 +923,72 @@ class RecordingManager: ObservableObject {
         print("SCStream capture started successfully")
         
         // Start writer sessions
+        print("Starting video writer session at time zero...")
         videoWriter.startSession(atSourceTime: .zero)
-        print("Video writer session started at time zero")
         
+        // Verify session started correctly
+        if videoWriter.status != .writing {
+            print("CRITICAL ERROR: Video writer not in writing state after starting session. Status: \(videoWriter.status.rawValue)")
+            if let error = videoWriter.error {
+                print("CRITICAL ERROR: Video writer error after starting session: \(error.localizedDescription)")
+            }
+        } else {
+            print("✓ Video writer session started successfully at time zero")
+        }
+        
+        // Start audio session if needed
         if let audioWriter = audioAssetWriter {
+            print("Starting audio writer session at time zero...")
             audioWriter.startSession(atSourceTime: .zero)
-            print("Audio writer session started at time zero")
+            
+            // Verify audio session started correctly
+            if audioWriter.status != .writing {
+                print("WARNING: Audio writer not in writing state after starting session. Status: \(audioWriter.status.rawValue)")
+                if let error = audioWriter.error {
+                    print("WARNING: Audio writer error after starting session: \(error.localizedDescription)")
+                }
+            } else {
+                print("✓ Audio writer session started successfully at time zero")
+            }
         }
     }
     
     @MainActor
     private func processSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
+        // Debug logging to track frequency of frame arrivals
+        videoFrameLogCounter += 1
+        
+        // Log every 60th frame to avoid flooding console
+        let shouldLogDetail = (videoFrameLogCounter % 60 == 1)
+        
+        if shouldLogDetail {
+            print("VIDEO FRAME: Received frame #\(videoFrameLogCounter)")
+        }
+        
         // Completely skip processing if we're paused or not recording
-        guard isRecording && !isPaused else { return }
+        guard isRecording && !isPaused else {
+            if shouldLogDetail {
+                print("VIDEO FRAME: Skipping - not recording or paused")
+            }
+            return
+        }
         
         // Before using a potentially less reliable buffer, validate it
         guard CMSampleBufferDataIsReady(sampleBuffer) else {
-            print("ERROR: Sample buffer data is not ready")
+            print("ERROR: Video sample buffer data is not ready")
             return
+        }
+        
+        // Get additional buffer info for debugging
+        if shouldLogDetail {
+            let presentationTimeStamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            let duration = CMSampleBufferGetDuration(sampleBuffer)
+            print("VIDEO FRAME: PTS=\(presentationTimeStamp.seconds)s, Duration=\(duration.seconds)s")
+            
+            if let formatDesc = CMSampleBufferGetFormatDescription(sampleBuffer) {
+                let dimensions = CMVideoFormatDescriptionGetDimensions(formatDesc)
+                print("VIDEO FRAME: Dimensions=\(dimensions.width)x\(dimensions.height)")
+            }
         }
         
         // Access these properties on the main actor
@@ -810,29 +1022,83 @@ class RecordingManager: ObservableObject {
             }
         }
         
-        // Append the buffer
+        // Append the buffer with detailed error checking
         let success = videoInput.append(sampleBuffer)
         
         if !success {
             print("ERROR: Failed to append video sample buffer")
+            
+            // Check writer status for detailed diagnostics
+            print("CRITICAL: AVAssetWriter status = \(writer.status.rawValue)")
+            if let error = writer.error {
+                print("CRITICAL: AVAssetWriter error: \(error.localizedDescription)")
+                print("CRITICAL: Error details: \(error)")
+            }
+            
+            // Check if input is still ready after failed append
+            if !videoInput.isReadyForMoreMediaData {
+                print("ERROR: Video input is no longer ready for more data after failed append")
+            }
         } else {
             // Keep track of processed frames for diagnostics
             videoFramesProcessed += 1
+            
+            // Log successful append periodically
             if videoFramesProcessed % 60 == 0 {
-                print("Processed \(videoFramesProcessed) video frames so far")
+                print("✓ VIDEO SUCCESS: Processed \(videoFramesProcessed) video frames successfully")
+                print("✓ VIDEO WRITER: Status=\(writer.status.rawValue), URL=\(writer.outputURL.path)")
+                
+                // Print file size check
+                do {
+                    let fileManager = FileManager.default
+                    let attributes = try fileManager.attributesOfItem(atPath: writer.outputURL.path)
+                    if let fileSize = attributes[.size] as? UInt64 {
+                        print("✓ VIDEO FILE: Current size = \(fileSize) bytes")
+                    }
+                } catch {
+                    print("WARNING: Unable to check video file size: \(error.localizedDescription)")
+                }
             }
         }
     }
     
     @MainActor
     private func processAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
+        // Debug logging to track frequency of audio samples
+        audioSampleLogCounter += 1
+        
+        // Log every 100th sample to avoid flooding console
+        let shouldLogDetail = (audioSampleLogCounter % 100 == 1)
+        
+        if shouldLogDetail {
+            print("AUDIO SAMPLE: Received sample #\(audioSampleLogCounter)")
+        }
+        
         // Skip processing if paused or not recording
-        guard isRecording && !isPaused else { return }
+        guard isRecording && !isPaused else {
+            if shouldLogDetail {
+                print("AUDIO SAMPLE: Skipping - not recording or paused")
+            }
+            return
+        }
         
         // Validate the sample buffer
         guard CMSampleBufferDataIsReady(sampleBuffer) else {
             print("ERROR: Audio sample buffer data is not ready")
             return
+        }
+        
+        // Get additional buffer info for debugging
+        if shouldLogDetail {
+            let presentationTimeStamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            let duration = CMSampleBufferGetDuration(sampleBuffer)
+            print("AUDIO SAMPLE: PTS=\(presentationTimeStamp.seconds)s, Duration=\(duration.seconds)s")
+            
+            if let formatDesc = CMSampleBufferGetFormatDescription(sampleBuffer) {
+                if let audioStreamBasicDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDesc) {
+                    print("AUDIO SAMPLE: Sample Rate=\(audioStreamBasicDescription.pointee.mSampleRate)Hz, Channels=\(audioStreamBasicDescription.pointee.mChannelsPerFrame)")
+                }
+            }
         }
         
         // Access properties directly on the main actor
@@ -885,11 +1151,47 @@ class RecordingManager: ObservableObject {
         
         if !success {
             print("ERROR: Failed to append audio sample buffer")
+            
+            // Check both writers for errors
+            if let writer = videoAssetWriter, preferences.mixAudioWithVideo {
+                print("AUDIO ERROR: Video writer status = \(writer.status.rawValue)")
+                if let error = writer.error {
+                    print("AUDIO ERROR: Video writer error: \(error.localizedDescription)")
+                }
+            }
+            
+            if let writer = audioAssetWriter, !preferences.mixAudioWithVideo {
+                print("AUDIO ERROR: Audio writer status = \(writer.status.rawValue)")
+                if let error = writer.error {
+                    print("AUDIO ERROR: Audio writer error: \(error.localizedDescription)")
+                }
+            }
         } else {
             // Track processed samples for diagnostics
             audioSamplesProcessed += 1
             if audioSamplesProcessed % 100 == 0 {
-                print("Processed \(audioSamplesProcessed) audio samples so far")
+                print("✓ AUDIO SUCCESS: Processed \(audioSamplesProcessed) audio samples")
+                
+                if preferences.mixAudioWithVideo {
+                    if let writer = videoAssetWriter {
+                        print("✓ AUDIO (mixed): Using video writer, Status=\(writer.status.rawValue)")
+                    }
+                } else {
+                    if let writer = audioAssetWriter, let url = audioOutputURL {
+                        print("✓ AUDIO (separate): Status=\(writer.status.rawValue), URL=\(url.path)")
+                        
+                        // Check file size of separate audio file
+                        do {
+                            let fileManager = FileManager.default
+                            let attributes = try fileManager.attributesOfItem(atPath: url.path)
+                            if let fileSize = attributes[.size] as? UInt64 {
+                                print("✓ AUDIO FILE: Current size = \(fileSize) bytes")
+                            }
+                        } catch {
+                            print("WARNING: Unable to check audio file size: \(error.localizedDescription)")
+                        }
+                    }
+                }
             }
         }
     }
@@ -947,7 +1249,21 @@ class RecordingManager: ObservableObject {
         // Reset start time
         startTime = nil
         
+        // Clear persisted recording state
+        clearPersistedRecordingState()
+        
         print("Recording state reset complete")
+    }
+    
+    private func clearPersistedRecordingState() {
+        print("Clearing persisted recording state")
+        
+        // Clear all recording-related UserDefaults
+        UserDefaults.standard.removeObject(forKey: RecordingManager.isRecordingKey)
+        UserDefaults.standard.removeObject(forKey: RecordingManager.isPausedKey)
+        UserDefaults.standard.removeObject(forKey: RecordingManager.recordingStartTimeKey)
+        UserDefaults.standard.removeObject(forKey: RecordingManager.recordingVideoDurationKey)
+        UserDefaults.standard.removeObject(forKey: RecordingManager.videoOutputURLKey)
     }
     
     private func teardownCaptureSession() async throws {
