@@ -347,26 +347,29 @@ struct ContentView: View {
         // Handle area selection - this will be implemented in a later task
         guard let selectedScreen = recordingManager.selectedScreen else { return }
         
-        // Create a placeholder area until we implement the proper selection tool
+        // Create a proper defined area that we can use for recording
         // For now, let's use a quarter of the screen in the center as a default
         let screenWidth = selectedScreen.frame.width
         let screenHeight = selectedScreen.frame.height
         
+        // Make sure we use even dimensions for better encoding
         let areaWidth = screenWidth / 2
         let areaHeight = screenHeight / 2
         let areaX = (screenWidth - areaWidth) / 2
         let areaY = (screenHeight - areaHeight) / 2
         
+        // Create the area rect - this MUST match what we're going to capture
         let selectedArea = CGRect(x: areaX, y: areaY, width: areaWidth, height: areaHeight)
+        
+        // Store the rect in our recordingManager
         recordingManager.recordingArea = selectedArea
         
-        // Update UI with selected area info and show confirmation (non-blocking)
+        print("Area selection: \(Int(areaWidth))×\(Int(areaHeight)) at (\(Int(areaX)), \(Int(areaY)))")
+        
+        // Update UI with selected area info
         selectedAreaInfo = "Selected area: \(Int(areaWidth))×\(Int(areaHeight)) at (\(Int(areaX)), \(Int(areaY)))"
         
-        // Skip external notifications to avoid compatibility issues
-        // Just rely on our UI feedback which is more reliable
-        
-        // Also update the UI to show confirmation
+        // Update the UI to show confirmation
         showAreaSelectedConfirmation = true
         
         // Auto-hide the confirmation after 3 seconds

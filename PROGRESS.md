@@ -128,9 +128,10 @@
 
 - [x] Implement concurrent file writing
 - [x] FIXME: Add crash-resistant saving
-- [ ] Create progress indicators
+- [x] Create progress indicators
 - [x] Implement disk space checking
 - [x] Add file compression options
+- [x] Add file verification and diagnostics
 
 ### Data Export
 
@@ -271,7 +272,7 @@
 
 ## Current Status
 
-**Project Start Date**: January 2025 **Current Phase**: Phase 5 - File Management (50% complete) **Completion**: 55%
+**Project Start Date**: January 2025 **Current Phase**: Phase 5 - File Management (85% complete) **Completion**: 65%
 
 ### Recent Updates
 
@@ -312,6 +313,6 @@
 3. Implement mouse cursor overlay option
 4. Add keyboard shortcuts for recording controls
 5. Improve save location selector UI
-6. Add crash-resistant saving for recordings
-7. Create progress indicators for file saving
-8. Implement data synchronization with video timestamps
+6. Implement data synchronization with video timestamps
+7. Add "high quality" toggle for lossless compression
+8. Create privacy permission UI flow for smoother onboarding

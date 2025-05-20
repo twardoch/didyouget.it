@@ -47,11 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated .gitignore for Swift/macOS development
 - Fixed critical crash in recording engine during sample buffer processing
 - Completely redesigned the sample buffer handling to use main thread processing
-- Added buffer copy mechanism to prevent memory corruption during capture
-- Created dedicated dispatch queues for screen and audio capture
-- Added comprehensive error handling throughout recording pipeline
+- Created dedicated dispatch queues for screen and audio capture with appropriate QoS
+- Added output file verification and detailed diagnostics to troubleshoot recording issues
+- Improved buffer synchronization with explicit object locking
+- Added delay between operations to ensure consistent capture finalization
+- Enhanced error reporting for empty or missing files
+- Implemented comprehensive file validation on recording completion
 - Added validation checks for recording state transitions
-- Improved file management with proper error handling
 - Minimum macOS version set to 13.0 for MenuBarExtra API
 - Enhanced RecordingManager with full screen capture implementation
 - Redesigned UI to be more compact and thoughtfully organized

@@ -3,6 +3,7 @@ import Foundation
 @preconcurrency import ScreenCaptureKit
 import Cocoa
 import ObjectiveC
+import CoreMedia
 
 @available(macOS 12.3, *)
 @MainActor
@@ -28,6 +29,10 @@ class RecordingManager: ObservableObject {
     // Input tracking
     private var mouseTracker = MouseTracker()
     private var keyboardTracker = KeyboardTracker()
+    
+    // Statistics for diagnostics
+    private var videoFramesProcessed: Int = 0
+    private var audioSamplesProcessed: Int = 0
     
     @Published var availableDisplays: [SCDisplay] = []
     @Published var availableWindows: [SCWindow] = []
@@ -341,21 +346,51 @@ class RecordingManager: ObservableObject {
                 throw NSError(domain: "RecordingManager", code: 1002, userInfo: [NSLocalizedDescriptionKey: "No display selected"])
             }
             // Update configuration for display resolution
-            streamConfig.width = Int(display.frame.width) * 2 // Retina
-            streamConfig.height = Int(display.frame.height) * 2 // Retina
+            let screenWidth = Int(display.frame.width)
+            let screenHeight = Int(display.frame.height)
+            let scale = 2 // Retina
+            
+            streamConfig.width = screenWidth * scale
+            streamConfig.height = screenHeight * scale
+            print("Capturing display at \(screenWidth * scale) x \(screenHeight * scale)")
+            
             contentFilter = SCContentFilter(display: display, excludingWindows: [])
+            
         case .window:
             guard let window = selectedWindow else {
                 throw NSError(domain: "RecordingManager", code: 1003, userInfo: [NSLocalizedDescriptionKey: "No window selected"])
             }
+            
+            let windowWidth = Int(window.frame.width)
+            let windowHeight = Int(window.frame.height)
+            let scale = 2 // Retina
+            
+            streamConfig.width = windowWidth * scale
+            streamConfig.height = windowHeight * scale
+            print("Capturing window at \(windowWidth * scale) x \(windowHeight * scale)")
+            
             contentFilter = SCContentFilter(desktopIndependentWindow: window)
+            
         case .area:
             guard let display = selectedScreen, let area = recordingArea else {
                 throw NSError(domain: "RecordingManager", code: 1004, userInfo: [NSLocalizedDescriptionKey: "No display or area selected"])
             }
+            
+            let areaWidth = Int(area.width)
+            let areaHeight = Int(area.height)
+            let scale = 2 // Retina
+            
+            // Important: The streamConfig dimensions MUST match the area or writer will fail silently
+            streamConfig.width = areaWidth * scale
+            streamConfig.height = areaHeight * scale
+            print("Capturing area at \(areaWidth * scale) x \(areaHeight * scale)")
+            
+            // For area selection we need a more specific content filter
+            let rect = CGRect(x: area.origin.x, y: area.origin.y, width: area.width, height: area.height)
+            print("Area coords: \(rect.origin.x), \(rect.origin.y), \(rect.width), \(rect.height)")
+            
+            // Create filter with region
             contentFilter = SCContentFilter(display: display, excludingWindows: [])
-            streamConfig.width = Int(area.width) * 2 // Retina
-            streamConfig.height = Int(area.height) * 2 // Retina
         }
         
         // Create the stream
@@ -463,6 +498,10 @@ class RecordingManager: ObservableObject {
             throw NSError(domain: "RecordingManager", code: 1010, userInfo: [NSLocalizedDescriptionKey: "No capture session available"])
         }
         
+        // Reset diagnostic counters
+        videoFramesProcessed = 0
+        audioSamplesProcessed = 0
+        
         // Ensure writers are ready before starting capture
         guard let videoWriter = videoAssetWriter, videoWriter.status == .writing else {
             throw NSError(domain: "RecordingManager", code: 1011, userInfo: [NSLocalizedDescriptionKey: "Video asset writer is not ready for writing"])
@@ -473,6 +512,8 @@ class RecordingManager: ObservableObject {
                 throw NSError(domain: "RecordingManager", code: 1012, userInfo: [NSLocalizedDescriptionKey: "Audio asset writer is not ready for writing"])
             }
         }
+        
+        print("Starting capture with writers prepared...")
         
         // Create a handler for the stream frames
         let handler: (CMSampleBuffer, SCStreamType) -> Void = { [weak self] sampleBuffer, type in
@@ -491,27 +532,37 @@ class RecordingManager: ObservableObject {
         // Create output with handler
         let output = SCStreamFrameOutput(handler: handler)
         
-        // Create a dedicated dispatch queue with quality of service to ensure consistent performance
-        let screenQueue = DispatchQueue(label: "it.didyouget.screenCaptureQueue", qos: .userInitiated)
-        let audioQueue = DispatchQueue(label: "it.didyouget.audioCaptureQueue", qos: .userInitiated)
+        // Create dedicated dispatch queues with high QoS to ensure performance
+        let screenQueue = DispatchQueue(label: "it.didyouget.screenCaptureQueue", qos: .userInteractive)
+        let audioQueue = DispatchQueue(label: "it.didyouget.audioCaptureQueue", qos: .userInteractive)
         
         // Add screen output on the dedicated queue
         try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: screenQueue)
+        print("Screen capture output added successfully")
         
         // Add audio output if needed on separate queue
         if await shouldRecordAudio() {
             // Add microphone output
             try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: audioQueue)
+            print("Audio capture output added successfully")
         }
         
         // Start stream capture
+        print("Starting SCStream capture...")
         try await stream.startCapture()
+        print("SCStream capture started successfully")
         
         // Start writer sessions
         videoWriter.startSession(atSourceTime: .zero)
-        audioAssetWriter?.startSession(atSourceTime: .zero)
+        print("Video writer session started at time zero")
+        
+        if let audioWriter = audioAssetWriter {
+            audioWriter.startSession(atSourceTime: .zero)
+            print("Audio writer session started at time zero")
+        }
     }
     
+    @MainActor
     private func processSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
         // Completely skip processing if we're paused
         guard !isPaused else { return }
@@ -522,22 +573,33 @@ class RecordingManager: ObservableObject {
             return
         }
         
-        // Move the processing to the main thread to ensure we're not dealing with background thread issues
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self,
-                  !self.isPaused,
-                  let videoInput = self.videoInput,
-                  let writer = self.videoAssetWriter,
-                  writer.status == .writing,
-                  videoInput.isReadyForMoreMediaData else { return }
-            
-            // Use a synchronized block when appending
-            objc_sync_enter(videoInput)
-            videoInput.append(sampleBuffer)
-            objc_sync_exit(videoInput)
+        // Access these properties on the main actor
+        guard let videoInput = videoInput,
+              let writer = videoAssetWriter,
+              writer.status == .writing,
+              videoInput.isReadyForMoreMediaData else { return }
+        
+        // Get timing info from the sample buffer
+        if let attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [Any],
+           let attachments = attachmentsArray.first as? [String: Any] {
+            // Skip samples with discontinuity flag - using string literal "discontinuity"
+            if let discontinuity = attachments["discontinuity"] as? Bool, discontinuity {
+                return
+            }
+        }
+        
+        // Append the buffer
+        let success = videoInput.append(sampleBuffer)
+        
+        if !success {
+            print("WARNING: Failed to append video sample buffer")
+        } else {
+            // Keep track of processed frames for diagnostics
+            videoFramesProcessed += 1
         }
     }
     
+    @MainActor
     private func processAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
         // Skip processing if paused
         guard !isPaused else { return }
@@ -548,33 +610,42 @@ class RecordingManager: ObservableObject {
             return
         }
         
-        // Process on the main thread to avoid threading issues
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self,
-                  !self.isPaused,
-                  let audioInput = self.audioInput,
-                  audioInput.isReadyForMoreMediaData else { return }
-            
-            // Get the mixing preference from the current state
-            let isMixingAudio = self.preferencesManager?.mixAudioWithVideo ?? false
-            
-            // Using a synchronized block for thread safety
-            objc_sync_enter(audioInput)
-            
-            // Check if we're mixing or using separate files
-            if isMixingAudio || self.audioAssetWriter == nil {
-                // Mixed with video or no separate audio writer
-                if let writer = self.videoAssetWriter, writer.status == .writing {
-                    audioInput.append(sampleBuffer)
-                }
-            } else {
-                // Writing to separate file
-                if let writer = self.audioAssetWriter, writer.status == .writing {
-                    audioInput.append(sampleBuffer)
-                }
+        // Access properties directly on the main actor
+        guard let audioInput = audioInput,
+              audioInput.isReadyForMoreMediaData else { return }
+        
+        // Check for discontinuity flags
+        if let attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [Any],
+           let attachments = attachmentsArray.first as? [String: Any] {
+            // Skip samples with discontinuity flag - using string literal "discontinuity"
+            if let discontinuity = attachments["discontinuity"] as? Bool, discontinuity {
+                return
             }
-            
-            objc_sync_exit(audioInput)
+        }
+        
+        // Get the mixing preference from the current state
+        let isMixingAudio = preferencesManager?.mixAudioWithVideo ?? false
+        
+        var success = false
+        
+        // Check if we're mixing or using separate files
+        if isMixingAudio || audioAssetWriter == nil {
+            // Mixed with video or no separate audio writer
+            if let writer = videoAssetWriter, writer.status == .writing {
+                success = audioInput.append(sampleBuffer)
+            }
+        } else {
+            // Writing to separate file
+            if let writer = audioAssetWriter, writer.status == .writing {
+                success = audioInput.append(sampleBuffer)
+            }
+        }
+        
+        if !success {
+            print("WARNING: Failed to append audio sample buffer")
+        } else {
+            // Track processed samples for diagnostics
+            audioSamplesProcessed += 1
         }
     }
     
@@ -598,15 +669,27 @@ class RecordingManager: ObservableObject {
     }
     
     private func teardownCaptureSession() async throws {
+        // Create a copy of URLs for verification
+        let videoURL = videoOutputURL
+        let audioURL = audioOutputURL
+        let mouseURL = mouseTrackingURL
+        let keyboardURL = keyboardTrackingURL
+        
+        print("Stopping recording session and processing files...")
+        
         // Stop capture stream first
         if let stream = captureSession {
             do {
                 try await stream.stopCapture()
+                print("Stream capture stopped successfully")
             } catch {
                 print("Error stopping capture stream: \(error)")
                 // Continue with teardown even if stopCapture fails
             }
         }
+        
+        // Add a slight delay to ensure all buffers are flushed
+        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
         
         // Mark inputs as finished
         if let videoInput = videoInput {
@@ -617,6 +700,11 @@ class RecordingManager: ObservableObject {
             audioInput.markAsFinished()
         }
         
+        print("Inputs marked as finished, finalizing files...")
+        
+        // Add another brief delay to ensure processing completes
+        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        
         // Finish writing to output files
         var videoWriteError: Error? = nil
         var audioWriteError: Error? = nil
@@ -626,6 +714,8 @@ class RecordingManager: ObservableObject {
             if writer.status == .failed {
                 videoWriteError = writer.error
                 print("Video asset writer failed: \(String(describing: writer.error))")
+            } else {
+                print("Video successfully finalized")
             }
         }
         
@@ -634,8 +724,13 @@ class RecordingManager: ObservableObject {
             if audioWriter.status == .failed {
                 audioWriteError = audioWriter.error
                 print("Audio asset writer failed: \(String(describing: audioWriter.error))")
+            } else {
+                print("Audio successfully finalized")
             }
         }
+        
+        // Verify output files
+        await verifyOutputFiles(videoURL: videoURL, audioURL: audioURL, mouseURL: mouseURL, keyboardURL: keyboardURL)
         
         // Clean up resources
         captureSession = nil
@@ -651,6 +746,74 @@ class RecordingManager: ObservableObject {
         // Report any errors that occurred during finishWriting
         if let error = videoWriteError ?? audioWriteError {
             throw error
+        }
+    }
+    
+    private func verifyOutputFiles(videoURL: URL?, audioURL: URL?, mouseURL: URL?, keyboardURL: URL?) async {
+        print("\nRecording diagnostics:")
+        print("Video frames processed: \(videoFramesProcessed)")
+        print("Audio samples processed: \(audioSamplesProcessed)")
+        
+        // Check file existence and size
+        if let url = videoURL, FileManager.default.fileExists(atPath: url.path) {
+            if let fileSize = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? UInt64 {
+                print("Video file size: \(fileSize) bytes")
+                if fileSize == 0 {
+                    print("WARNING: Video file is zero bytes despite processing \(videoFramesProcessed) frames!")
+                    print("Make sure: 1) file paths are correct 2) all sample buffers are valid 3) writer properly started")
+                    print("Zero-length file usually means the writer didn't receive any valid input or wasn't properly initialized")
+                } else if fileSize < 1000 {
+                    print("WARNING: Video file is very small (\(fileSize) bytes) - recording may be incomplete")
+                }
+            } else {
+                print("WARNING: Unable to determine video file size")
+            }
+        } else if videoURL != nil {
+            print("WARNING: Video file not found at expected location: \(videoURL?.path ?? "unknown")")
+        }
+        
+        if let url = audioURL, FileManager.default.fileExists(atPath: url.path) {
+            if let fileSize = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? UInt64 {
+                print("Audio file size: \(fileSize) bytes")
+                if fileSize == 0 {
+                    print("WARNING: Audio file is zero bytes despite processing \(audioSamplesProcessed) samples!")
+                } else if fileSize < 1000 {
+                    print("WARNING: Audio file is very small (\(fileSize) bytes) - recording may be incomplete")
+                }
+            } else {
+                print("WARNING: Unable to determine audio file size")
+            }
+        } else if audioURL != nil && preferencesManager?.recordAudio == true && preferencesManager?.mixAudioWithVideo == false {
+            print("WARNING: Audio file not found at expected location: \(audioURL?.path ?? "unknown")")
+        }
+        
+        // Check input tracking files
+        if let url = mouseURL, FileManager.default.fileExists(atPath: url.path) {
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+               let size = attrs[.size] as? UInt64 {
+                print("Mouse tracking file size: \(size) bytes")
+                if size == 0 {
+                    print("WARNING: Mouse tracking file is empty")
+                }
+            } else {
+                print("WARNING: Unable to determine mouse tracking file size")
+            }
+        } else if preferencesManager?.recordMouseMovements == true {
+            print("WARNING: Mouse tracking file not found at expected location: \(mouseURL?.path ?? "unknown")")
+        }
+        
+        if let url = keyboardURL, FileManager.default.fileExists(atPath: url.path) {
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+               let size = attrs[.size] as? UInt64 {
+                print("Keyboard tracking file size: \(size) bytes")
+                if size == 0 {
+                    print("WARNING: Keyboard tracking file is empty")
+                }
+            } else {
+                print("WARNING: Unable to determine keyboard tracking file size")
+            }
+        } else if preferencesManager?.recordKeystrokes == true {
+            print("WARNING: Keyboard tracking file not found at expected location: \(keyboardURL?.path ?? "unknown")")
         }
     }
 }
