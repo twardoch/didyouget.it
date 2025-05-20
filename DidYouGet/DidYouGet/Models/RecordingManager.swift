@@ -176,44 +176,40 @@ class RecordingManager: ObservableObject {
         
         print("Recording options: Audio=\(preferences.recordAudio), Mouse=\(preferences.recordMouseMovements), Keyboard=\(preferences.recordKeystrokes)")
         
-        // Initialize recording state
+        // Initialize recording state counters
         print("Setting up recording state")
-        startTime = Date()
         videoFramesProcessed = 0
         audioSamplesProcessed = 0
-        
-        // Set up timer for recording duration
-        let startTimeCapture = startTime ?? Date() // Capture start time
-        print("Starting recording timer at: \(startTimeCapture)")
-        let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            
-            // Determine current duration using captured start time
-            let currentTime = Date()
-            let duration = currentTime.timeIntervalSince(startTimeCapture)
-            
-            // Update on main actor
-            Task { @MainActor in
-                self.recordingDuration = duration
-            }
-        }
-        
-        // Store the timer
-        self.timer = timer
-        
+
         do {
             // Set up capture session with comprehensive error handling
             print("Setting up capture session")
             try await setupCaptureSession()
-            
+
+            // Record start time only after capture starts
+            startTime = Date()
+            let startTimeCapture = startTime ?? Date()
+            print("Starting recording timer at: \(startTimeCapture)")
+            let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+                guard let self = self else { return }
+
+                let currentTime = Date()
+                let duration = currentTime.timeIntervalSince(startTimeCapture)
+
+                Task { @MainActor in
+                    self.recordingDuration = duration
+                }
+            }
+
+            self.timer = timer
+
             // Start input tracking if enabled
             print("Starting input tracking")
             startInputTracking()
-            
+
             // Set recording state to true ONLY after all setup is complete
             isRecording = true
-            startTime = Date()  // Ensure startTime is set after recording is confirmed started
-            
+
             print("Recording started successfully")
         } catch {
             // If we hit any errors, reset the recording state
