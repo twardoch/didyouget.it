@@ -320,6 +320,7 @@
 4. **Improved logging** - Added comprehensive logging throughout the recording process for better diagnostics
 5. **Preferences handling** - Fixed issues where preferences weren't correctly accessed during recording
 6. **Stream output handling** - Enhanced frame and sample buffer processing to properly handle video and audio
+7. **Recording state bug** - Fixed issue where recording state wasn't set after starting, causing timer and output files to fail
 
 ### Next Steps
 

@@ -201,11 +201,14 @@ class RecordingManager: ObservableObject {
         // Set up capture session with comprehensive error handling
         print("Setting up capture session")
         try await setupCaptureSession()
-        
+
         // Start input tracking if enabled
         print("Starting input tracking")
         startInputTracking()
-        
+
+        // Mark recording state as active only after everything succeeded
+        isRecording = true
+
         print("Recording started successfully")
     }
     

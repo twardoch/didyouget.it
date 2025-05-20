@@ -79,6 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed preferences access issues during recording session setup
 - Added more robust bitrate and quality settings based on selected preferences
 - Improved handling of video dimensions for Retina displays
+- Fixed bug where `RecordingManager` did not set `isRecording` after starting,
+  preventing timer and output files from being produced
 
 ### Planned
 - Full featured area selection tool with visual selection interface
