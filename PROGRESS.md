@@ -322,6 +322,11 @@
 6. **Stream output handling** - Enhanced frame and sample buffer processing to properly handle video and audio
 7. **Recording state bug** - Fixed issue where recording state wasn't set after starting, causing timer and output files to fail
 
+### Known Issues
+
+- FIXME: App UI freezes when clicking "Record"; the app becomes unresponsive and must be force quit.
+- When clicking Record then Stop, the timer never starts and no MOV or JSON files are produced.
+
 ### Next Steps
 
 1. Implement area selection tool for specific screen regions
