@@ -35,8 +35,28 @@ struct ContentView: View {
                 // Primary control button - more compact and visually distinct
                 if !recordingManager.isRecording {
                     Button(action: {
-                        Task {
-                            await recordingManager.startRecording()
+                        // Use a detached Task to avoid blocking the UI thread
+                        Task.detached(priority: .userInitiated) {
+                            // Then dispatch back to main thread for the actual operation
+                            await MainActor.run {
+                                // Show immediate feedback by setting isRecording to true
+                                // This will update the UI right away
+                                recordingManager.isRecording = true
+                                
+                                // Start actual recording in a separate task to prevent UI freeze
+                                Task {
+                                    do {
+                                        // Now we can start the actual recording process
+                                        // If it fails, we'll reset isRecording
+                                        try await recordingManager.startRecordingAsync()
+                                    } catch {
+                                        // Handle errors and reset UI state
+                                        print("Error starting recording: \(error.localizedDescription)")
+                                        recordingManager.isRecording = false
+                                        recordingManager.showAlert(title: "Recording Error", message: error.localizedDescription)
+                                    }
+                                }
+                            }
                         }
                     }) {
                         Text("Record")
@@ -54,7 +74,8 @@ struct ContentView: View {
                     HStack(spacing: 8) {
                         // Stop button
                         Button(action: {
-                            Task {
+                            // Use a detached Task for better UI responsiveness
+                            Task.detached(priority: .userInitiated) {
                                 await recordingManager.stopRecording()
                             }
                         }) {

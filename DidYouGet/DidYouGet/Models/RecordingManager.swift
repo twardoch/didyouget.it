@@ -111,108 +111,106 @@ class RecordingManager: ObservableObject {
     
     @MainActor
     func startRecording() async {
-        guard !isRecording else { 
-            print("Recording already in progress, ignoring start request")
-            return 
-        }
-        
-        print("\n=== STARTING RECORDING ===\n")
         do {
-            // Check if we have all the required parameters before starting
-            switch captureType {
-            case .display:
-                guard selectedScreen != nil else {
-                    print("ERROR: No display selected for display recording")
-                    showAlert(title: "Recording Error", message: "No display selected. Please select a display to record.")
-                    return
-                }
-                print("Recording source: Display with ID \(selectedScreen!.displayID)")
-                
-            case .window:
-                guard selectedWindow != nil else {
-                    print("ERROR: No window selected for window recording")
-                    showAlert(title: "Recording Error", message: "No window selected. Please select a window to record.")
-                    return
-                }
-                print("Recording source: Window with ID \(selectedWindow!.windowID) and title '\(selectedWindow!.title ?? "Untitled")'")
-                
-            case .area:
-                guard selectedScreen != nil else {
-                    print("ERROR: No display selected for area recording")
-                    showAlert(title: "Recording Error", message: "No display selected for area recording. Please select a display first.")
-                    return
-                }
-                
-                guard recordingArea != nil else {
-                    print("ERROR: No area selected for area recording")
-                    showAlert(title: "Recording Error", message: "No area selected. Please use the 'Select Area...' button to choose an area to record.")
-                    return
-                }
-                
-                print("Recording source: Area \(Int(recordingArea!.width))×\(Int(recordingArea!.height)) at position (\(Int(recordingArea!.origin.x)), \(Int(recordingArea!.origin.y))) on display \(selectedScreen!.displayID)")
-            }
-            
-            // Check preferences and connectivity
-            guard let preferences = preferencesManager else {
-                print("ERROR: PreferencesManager is not set")
-                showAlert(title: "Recording Error", message: "Internal error: preferences not available.")
-                return
-            }
-            
-            print("Recording options: Audio=\(preferences.recordAudio), Mouse=\(preferences.recordMouseMovements), Keyboard=\(preferences.recordKeystrokes)")
-            
-            // Initialize recording state
-            print("Setting up recording state")
-            isRecording = true
-            startTime = Date()
-            videoFramesProcessed = 0
-            audioSamplesProcessed = 0
-            
-            // Set up timer for recording duration
-            let startTimeCapture = startTime ?? Date() // Capture start time
-            print("Starting recording timer at: \(startTimeCapture)")
-            let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-                guard let self = self else { return }
-                
-                // Determine current duration using captured start time
-                let currentTime = Date()
-                let duration = currentTime.timeIntervalSince(startTimeCapture)
-                
-                // Update on main actor
-                Task { @MainActor in
-                    self.recordingDuration = duration
-                }
-            }
-            
-            // Store the timer
-            self.timer = timer
-            
-            // Set up capture session with comprehensive error handling
-            print("Setting up capture session")
-            try await setupCaptureSession()
-            
-            // Start input tracking if enabled
-            print("Starting input tracking")
-            startInputTracking()
-            
-            print("Recording started successfully")
+            try await startRecordingAsync()
         } catch {
-            // Handle any errors during recording setup
-            print("ERROR: Failed to start recording: \(error)")
+            print("Error in startRecording: \(error)")
+            // Reset state
             isRecording = false
             timer?.invalidate()
             timer = nil
             recordingDuration = 0
             
             // Show error to user
-            await MainActor.run {
-                showAlert(title: "Recording Error", message: "Could not start recording: \(error.localizedDescription)")
-            }
+            showAlert(title: "Recording Error", message: error.localizedDescription)
         }
     }
     
     @MainActor
-    private func showAlert(title: String, message: String) {
+    func startRecordingAsync() async throws {
+        guard !isRecording else { 
+            print("Recording already in progress, ignoring start request")
+            return 
+        }
+        
+        print("\n=== STARTING RECORDING ===\n")
+        
+        // Check if we have all the required parameters before starting
+        switch captureType {
+        case .display:
+            guard selectedScreen != nil else {
+                print("ERROR: No display selected for display recording")
+                throw NSError(domain: "RecordingManager", code: 1001, userInfo: [NSLocalizedDescriptionKey: "No display selected. Please select a display to record."])
+            }
+            print("Recording source: Display with ID \(selectedScreen!.displayID)")
+            
+        case .window:
+            guard selectedWindow != nil else {
+                print("ERROR: No window selected for window recording")
+                throw NSError(domain: "RecordingManager", code: 1002, userInfo: [NSLocalizedDescriptionKey: "No window selected. Please select a window to record."])
+            }
+            print("Recording source: Window with ID \(selectedWindow!.windowID) and title '\(selectedWindow!.title ?? "Untitled")'")
+            
+        case .area:
+            guard selectedScreen != nil else {
+                print("ERROR: No display selected for area recording")
+                throw NSError(domain: "RecordingManager", code: 1003, userInfo: [NSLocalizedDescriptionKey: "No display selected for area recording. Please select a display first."])
+            }
+            
+            guard recordingArea != nil else {
+                print("ERROR: No area selected for area recording")
+                throw NSError(domain: "RecordingManager", code: 1004, userInfo: [NSLocalizedDescriptionKey: "No area selected. Please use the 'Select Area...' button to choose an area to record."])
+            }
+            
+            print("Recording source: Area \(Int(recordingArea!.width))×\(Int(recordingArea!.height)) at position (\(Int(recordingArea!.origin.x)), \(Int(recordingArea!.origin.y))) on display \(selectedScreen!.displayID)")
+        }
+        
+        // Check preferences and connectivity
+        guard let preferences = preferencesManager else {
+            print("ERROR: PreferencesManager is not set")
+            throw NSError(domain: "RecordingManager", code: 1005, userInfo: [NSLocalizedDescriptionKey: "Internal error: preferences not available."])
+        }
+        
+        print("Recording options: Audio=\(preferences.recordAudio), Mouse=\(preferences.recordMouseMovements), Keyboard=\(preferences.recordKeystrokes)")
+        
+        // Initialize recording state
+        print("Setting up recording state")
+        startTime = Date()
+        videoFramesProcessed = 0
+        audioSamplesProcessed = 0
+        
+        // Set up timer for recording duration
+        let startTimeCapture = startTime ?? Date() // Capture start time
+        print("Starting recording timer at: \(startTimeCapture)")
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            
+            // Determine current duration using captured start time
+            let currentTime = Date()
+            let duration = currentTime.timeIntervalSince(startTimeCapture)
+            
+            // Update on main actor
+            Task { @MainActor in
+                self.recordingDuration = duration
+            }
+        }
+        
+        // Store the timer
+        self.timer = timer
+        
+        // Set up capture session with comprehensive error handling
+        print("Setting up capture session")
+        try await setupCaptureSession()
+        
+        // Start input tracking if enabled
+        print("Starting input tracking")
+        startInputTracking()
+        
+        print("Recording started successfully")
+    }
+    
+    @MainActor
+    func showAlert(title: String, message: String) {
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
@@ -266,25 +264,10 @@ class RecordingManager: ObservableObject {
     
     @MainActor
     func stopRecording() async {
-        guard isRecording else { return }
-        
         do {
-            // Update recording state
-            isRecording = false
-            isPaused = false
-            timer?.invalidate()
-            timer = nil
-            recordingDuration = 0
-            
-            // Stop input tracking
-            mouseTracker.stopTracking()
-            keyboardTracker.stopTracking()
-            
-            // Teardown capture session
-            try await teardownCaptureSession()
-            
+            try await stopRecordingAsync()
         } catch {
-            print("Error stopping recording: \(error)")
+            print("Error in stopRecording: \(error)")
             // Force reset of the recording state even if teardown fails
             isRecording = false
             isPaused = false
@@ -299,6 +282,34 @@ class RecordingManager: ObservableObject {
             videoOutputURL = nil
             audioOutputURL = nil
         }
+    }
+    
+    @MainActor
+    func stopRecordingAsync() async throws {
+        guard isRecording else { 
+            print("Not recording, ignoring stop request")
+            return 
+        }
+        
+        print("\n=== STOPPING RECORDING ===\n")
+        
+        // Update recording state first to prevent UI from triggering multiple stops
+        isRecording = false
+        isPaused = false
+        timer?.invalidate()
+        timer = nil
+        recordingDuration = 0
+        
+        // Stop input tracking
+        print("Stopping input tracking")
+        mouseTracker.stopTracking()
+        keyboardTracker.stopTracking()
+        
+        // Teardown capture session
+        print("Tearing down capture session")
+        try await teardownCaptureSession()
+        
+        print("Recording stopped successfully")
     }
     
     @MainActor
@@ -400,7 +411,7 @@ class RecordingManager: ObservableObject {
         }
         
         // Check and request audio permission if needed
-        let shouldRecordAudio = await self.shouldRecordAudio()
+        let shouldRecordAudio = preferencesManager?.recordAudio == true
         if shouldRecordAudio {
             print("Audio recording is enabled, requesting permissions...")
             let audioPermission = await AVCaptureDevice.requestAccess(for: .audio)
@@ -726,7 +737,7 @@ class RecordingManager: ObservableObject {
         print("Screen capture output added successfully")
         
         // Add audio output if needed on separate queue
-        if await shouldRecordAudio() {
+        if preferencesManager?.recordAudio == true {
             // Add microphone output
             try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: audioQueue)
             print("Audio capture output added successfully")
@@ -872,15 +883,6 @@ class RecordingManager: ObservableObject {
             }
         }
     }
-    
-    private func shouldRecordAudio() async -> Bool {
-        // Get the preference from the PreferencesManager
-        return await MainActor.run {
-            let preferencesManager = getPreferencesManager()
-            return preferencesManager?.recordAudio ?? false
-        }
-    }
-    
     
     private var preferencesManager: PreferencesManager?
     
