@@ -15,6 +15,12 @@ class RecordingManager: ObservableObject {
     private static let recordingVideoDurationKey = "DidYouGetIt.recordingVideoDuration"
     private static let videoOutputURLKey = "DidYouGetIt.videoOutputURL"
     
+    // SCStream types (needed to prevent circular references)
+    enum SCStreamType {
+        case screen
+        case audio
+    }
+    
     // Published properties with persistence
     @Published var isRecording: Bool = false {
         didSet {
@@ -32,111 +38,27 @@ class RecordingManager: ObservableObject {
     @Published var selectedScreen: SCDisplay?
     @Published var recordingArea: CGRect?
     
-    private var captureSession: SCStream?
-    private var videoAssetWriter: AVAssetWriter?
-    private var audioAssetWriter: AVAssetWriter?
-    private var videoInput: AVAssetWriterInput?
-    private var audioInput: AVAssetWriterInput?
-    private var startTime: Date?
     private var timer: Timer?
+    private var startTime: Date?
+    
     private var videoOutputURL: URL?
     private var audioOutputURL: URL?
     private var mouseTrackingURL: URL?
     private var keyboardTrackingURL: URL?
-    private var streamConfig: SCStreamConfiguration?
     
     // Input tracking
     private var mouseTracker = MouseTracker()
     private var keyboardTracker = KeyboardTracker()
     
-    // Statistics for diagnostics
-    private var videoFramesProcessed: Int = 0
-    private var audioSamplesProcessed: Int = 0
-    
-    // Frame tracking for detailed logging
-    private var videoFrameLogCounter: Int = 0
-    private var audioSampleLogCounter: Int = 0
-    
     @Published var availableDisplays: [SCDisplay] = []
     @Published var availableWindows: [SCWindow] = []
-    @Published var captureType: CaptureType = .display
+    @Published var captureType: CaptureSessionManager.CaptureType = .display
     @Published var selectedWindow: SCWindow?
     
-    enum CaptureType {
-        case display
-        case window
-        case area
-    }
-    
-    enum SCStreamType {
-        case screen
-        case audio
-    }
-    
-    class SCStreamFrameOutput: NSObject, SCStreamOutput {
-        private let handler: (CMSampleBuffer, SCStreamType) -> Void
-        private var screenFrameCount = 0
-        private var audioSampleCount = 0
-        private var hasReceivedFirstFrame = false
-        private var firstFrameTime: CMTime?
-        
-        init(handler: @escaping (CMSampleBuffer, SCStreamType) -> Void) {
-            self.handler = handler
-            super.init()
-            print("SCStreamFrameOutput initialized - ready to receive frames")
-        }
-        
-        func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-            // Perform basic buffer validation before proceeding
-            guard CMSampleBufferIsValid(sampleBuffer) else {
-                print("ERROR: Invalid sample buffer received from SCStream - skipping")
-                return
-            }
-            
-            switch type {
-            case .screen:
-                screenFrameCount += 1
-                
-                // Track the first frame time for potential timing adjustments
-                if !hasReceivedFirstFrame {
-                    firstFrameTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-                    hasReceivedFirstFrame = true
-                    print("SCStream output: Received FIRST screen frame! PTS=\(firstFrameTime?.seconds ?? 0)s")
-                }
-                
-                // Only log occasionally to prevent console flooding
-                if screenFrameCount == 1 || screenFrameCount % 300 == 0 {
-                    let currentPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-                    print("SCStream output: Received screen frame #\(screenFrameCount), PTS=\(currentPTS.seconds)s")
-                }
-                
-                // Forward to handler for processing
-                handler(sampleBuffer, .screen)
-                
-            case .audio:
-                audioSampleCount += 1
-                // Only log occasionally to prevent console flooding
-                if audioSampleCount == 1 || audioSampleCount % 300 == 0 {
-                    let currentPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-                    print("SCStream output: Received audio sample #\(audioSampleCount), PTS=\(currentPTS.seconds)s")
-                }
-                handler(sampleBuffer, .audio)
-                
-            case .microphone:
-                audioSampleCount += 1
-                // Only log occasionally to prevent console flooding
-                if audioSampleCount == 1 || audioSampleCount % 300 == 0 {
-                    let currentPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-                    print("SCStream output: Received microphone sample #\(audioSampleCount), PTS=\(currentPTS.seconds)s")
-                }
-                handler(sampleBuffer, .audio)
-                
-            @unknown default:
-                print("SCStream output: Received unknown type \(type)")
-                break
-            }
-        }
-    }
+    // Component managers for handling specialized tasks
+    private var captureSessionManager = CaptureSessionManager()
+    private var videoProcessor = VideoProcessor()
+    private var audioProcessor = AudioProcessor()
     
     init() {
         print("Initializing RecordingManager")
@@ -297,57 +219,177 @@ class RecordingManager: ObservableObject {
         
         print("Recording options: Audio=\(preferences.recordAudio), Mouse=\(preferences.recordMouseMovements), Keyboard=\(preferences.recordKeystrokes)")
         
-        // Initialize recording state counters
-        print("Setting up recording state")
-        videoFramesProcessed = 0
-        audioSamplesProcessed = 0
-
         do {
+            // Setup output directory and paths
+            let paths = OutputFileManager.createOutputURLs(
+                recordAudio: preferences.recordAudio,
+                mixAudioWithVideo: preferences.mixAudioWithVideo,
+                recordMouseMovements: preferences.recordMouseMovements,
+                recordKeystrokes: preferences.recordKeystrokes
+            )
+            
+            videoOutputURL = paths.videoURL
+            audioOutputURL = paths.audioURL
+            mouseTrackingURL = paths.mouseTrackingURL
+            keyboardTrackingURL = paths.keyboardTrackingURL
+            
+            // Store the video URL string for persistence
+            if let videoURL = videoOutputURL {
+                UserDefaults.standard.set(videoURL.absoluteString, forKey: RecordingManager.videoOutputURLKey)
+                print("Saved video output URL to UserDefaults: \(videoURL.absoluteString)")
+            }
+            
             // Set recording state to true BEFORE setting up capture session
             // This ensures that any frames that come in during setup will be processed
             isRecording = true
             
-            // Set up capture session with comprehensive error handling
-            print("Setting up capture session")
-            try await setupCaptureSession()
-
-            // Record start time only after capture starts
-            startTime = Date()
+            // Configure capture session based on preferences
+            let streamConfig = try captureSessionManager.configureCaptureSession(
+                captureType: captureType,
+                selectedScreen: selectedScreen,
+                selectedWindow: selectedWindow,
+                recordingArea: recordingArea,
+                frameRate: preferences.frameRate,
+                recordAudio: preferences.recordAudio
+            )
             
-            // Store start time in UserDefaults for persistence
-            UserDefaults.standard.set(startTime!.timeIntervalSince1970, forKey: RecordingManager.recordingStartTimeKey)
-            print("Saved recording start time to UserDefaults: \(startTime!)")
+            // Create content filter based on capture type
+            let contentFilter = try captureSessionManager.createContentFilter(
+                captureType: captureType,
+                selectedScreen: selectedScreen,
+                selectedWindow: selectedWindow,
+                recordingArea: recordingArea
+            )
             
-            let startTimeCapture = startTime ?? Date()
-            print("Starting recording timer at: \(startTimeCapture)")
-            let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-                guard let self = self else { return }
-
-                let currentTime = Date()
-                let duration = currentTime.timeIntervalSince(startTimeCapture)
-
-                Task { @MainActor in
-                    self.recordingDuration = duration
-                    
-                    // Periodically save duration to UserDefaults (every 5 seconds)
-                    if Int(duration) % 5 == 0 {
-                        UserDefaults.standard.set(duration, forKey: RecordingManager.recordingVideoDurationKey)
-                    }
+            // Setup video writer
+            _ = try videoProcessor.setupVideoWriter(
+                url: paths.videoURL,
+                width: streamConfig.width,
+                height: streamConfig.height,
+                frameRate: preferences.frameRate,
+                videoQuality: preferences.videoQuality
+            )
+            
+            // Setup audio writer if needed
+            if preferences.recordAudio {
+                if preferences.mixAudioWithVideo {
+                    // Configure audio input for video writer
+                    _ = audioProcessor.configureAudioInputForVideoWriter(videoWriter: videoProcessor.videoAssetWriter!)
+                } else if let audioURL = paths.audioURL {
+                    // Create separate audio writer
+                    _ = try audioProcessor.setupAudioWriter(url: audioURL)
                 }
             }
-
-            self.timer = timer
-
+            
+            // Start video and audio writers
+            if !videoProcessor.startWriting() {
+                throw NSError(domain: "RecordingManager", code: 1006, userInfo: [NSLocalizedDescriptionKey: "Failed to start video writer"])
+            }
+            
+            if preferences.recordAudio && !preferences.mixAudioWithVideo {
+                if !audioProcessor.startWriting() {
+                    print("WARNING: Failed to start audio writer - continuing without audio")
+                }
+            }
+            
+            // Create the stream with sample buffer handler
+            try captureSessionManager.createStream(
+                filter: contentFilter,
+                config: streamConfig,
+                handler: { [weak self] sampleBuffer, type in
+                    guard let self = self else { return }
+                    self.handleSampleBuffer(sampleBuffer, type: type)
+                }
+            )
+            
+            // Start the session with time zero
+            let sessionStartTime = CMTime.zero
+            videoProcessor.startSession(at: sessionStartTime)
+            
+            if preferences.recordAudio && !preferences.mixAudioWithVideo {
+                audioProcessor.startSession(at: sessionStartTime)
+            }
+            
+            // Ensure we're on the main thread for UI updates and timer creation
+            await MainActor.run {
+                // Record start time after capture starts
+                startTime = Date()
+                
+                // Store start time in UserDefaults for persistence
+                UserDefaults.standard.set(startTime!.timeIntervalSince1970, forKey: RecordingManager.recordingStartTimeKey)
+                print("Saved recording start time to UserDefaults: \(startTime!)")
+                
+                let startTimeCapture = startTime ?? Date()
+                print("Starting recording timer at: \(startTimeCapture)")
+                
+                // Make sure any existing timer is invalidated
+                timer?.invalidate()
+                
+                // Create a timer that updates the recording duration
+                let timerStartTime = startTimeCapture
+                
+                // Create a timer that will safely dispatch back to the main actor for updates
+                let timerStart = timerStartTime // Capture the start time as a local variable
+                let newTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+                    guard let self = self else { return }
+                    
+                    // Calculate the duration here since it doesn't need actor isolation
+                    let duration = Date().timeIntervalSince(timerStart)
+                    
+                    // Run the UI updates on the MainActor
+                    Task { @MainActor in
+                        // Only update if we're still recording
+                        guard self.isRecording, !self.isPaused else { return }
+                        
+                        // Update the UI
+                        self.recordingDuration = duration
+                        
+                        // Periodically save duration to UserDefaults (every 5 seconds)
+                        if Int(duration) % 5 == 0 {
+                            UserDefaults.standard.set(duration, forKey: RecordingManager.recordingVideoDurationKey)
+                        }
+                    }
+                }
+                
+                // Store the timer reference
+                self.timer = newTimer
+                
+                // Ensure timer doesn't get invalidated by RunLoop modes
+                RunLoop.current.add(newTimer, forMode: .common)
+                
+                print("✓ Timer successfully initialized and started")
+            }
+            
+            // Start the capture session
+            try await captureSessionManager.startCapture()
+            
             // Start input tracking if enabled
-            print("Starting input tracking")
             startInputTracking()
-
+            
             print("Recording started successfully")
         } catch {
             // If we hit any errors, reset the recording state
             print("ERROR: Failed during recording setup: \(error)")
             await resetRecordingState()
             throw error
+        }
+    }
+    
+    @MainActor
+    private func handleSampleBuffer(_ sampleBuffer: CMSampleBuffer, type: SCStreamType) {
+        // Skip processing if paused
+        if isPaused {
+            return
+        }
+        
+        // Process sample buffer based on type
+        switch type {
+        case .screen:
+            _ = videoProcessor.processSampleBuffer(sampleBuffer)
+        case .audio:
+            if let preferences = preferencesManager {
+                _ = audioProcessor.processAudioSampleBuffer(sampleBuffer, isMixingWithVideo: preferences.mixAudioWithVideo)
+            }
         }
     }
     
@@ -406,23 +448,35 @@ class RecordingManager: ObservableObject {
     
     @MainActor
     func stopRecording() async {
+        // First, immediately update UI state to reflect recording has stopped
+        // This ensures UI changes even if the teardown process has errors
+        print("Stopping recording - updating UI state immediately")
+        isRecording = false
+        isPaused = false
+        
+        // Stop the timer immediately to prevent UI updates during teardown
+        if let timer = self.timer {
+            timer.invalidate()
+            self.timer = nil
+            print("Timer stopped")
+        }
+        
+        // Reset duration
+        recordingDuration = 0
+        
         do {
+            // Now perform actual teardown of recording infrastructure
             try await stopRecordingAsync()
         } catch {
             print("Error in stopRecording: \(error)")
-            // Force reset of the recording state even if teardown fails
-            isRecording = false
-            isPaused = false
-            timer?.invalidate()
-            timer = nil
-            recordingDuration = 0
-            captureSession = nil
-            videoAssetWriter = nil
-            audioAssetWriter = nil
-            videoInput = nil
-            audioInput = nil
-            videoOutputURL = nil
-            audioOutputURL = nil
+        }
+        
+        // Double-check that recording state is reset properly
+        await MainActor.run {
+            if isRecording {
+                print("WARNING: isRecording was still true after stopRecording - forcing to false")
+                isRecording = false
+            }
         }
     }
     
@@ -447,18 +501,51 @@ class RecordingManager: ObservableObject {
         mouseTracker.stopTracking()
         keyboardTracker.stopTracking()
         
-        // Teardown capture session
-        print("Tearing down capture session")
-        try await teardownCaptureSession()
+        // Stop capture session
+        print("Stopping capture session")
+        await captureSessionManager.stopCapture()
+        
+        // Add a slight delay to ensure all buffers are flushed
+        print("Waiting for buffers to flush...")
+        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        
+        // Finalize video and audio files
+        print("Finalizing recording files")
+        let (_, videoError) = await videoProcessor.finishWriting()
+        let (_, audioError) = await audioProcessor.finishWriting()
+        
+        // Verify output files
+        let preferences = preferencesManager
+        OutputFileManager.verifyOutputFiles(
+            videoURL: videoOutputURL,
+            audioURL: audioOutputURL,
+            mouseURL: mouseTrackingURL,
+            keyboardURL: keyboardTrackingURL,
+            videoFramesProcessed: videoProcessor.getFramesProcessed(),
+            audioSamplesProcessed: audioProcessor.getSamplesProcessed(),
+            shouldHaveVideo: true,
+            shouldHaveSeparateAudio: preferences?.recordAudio == true && preferences?.mixAudioWithVideo == false,
+            shouldHaveMouse: preferences?.recordMouseMovements == true,
+            shouldHaveKeyboard: preferences?.recordKeystrokes == true
+        )
         
         print("Recording stopped successfully")
+        
+        // Report any errors that occurred during finishWriting
+        if let error = videoError ?? audioError {
+            print("ERROR: Error during finalization: \(error)")
+            throw error
+        }
     }
     
     @MainActor
     func pauseRecording() {
         guard isRecording && !isPaused else { return }
         isPaused = true
-        timer?.invalidate()
+        if let timer = self.timer {
+            timer.invalidate()
+            self.timer = nil
+        }
     }
     
     @MainActor
@@ -466,12 +553,26 @@ class RecordingManager: ObservableObject {
         guard isRecording && isPaused else { return }
         isPaused = false
         
-        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        let newTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
+            
+            // Run the UI updates on the MainActor
             Task { @MainActor in
-                self.recordingDuration = Date().timeIntervalSince(self.startTime ?? Date())
+                // Check if we should continue updating
+                guard self.isRecording, !self.isPaused else { return }
+                
+                // Update the UI if we have a valid start time
+                if let startTime = self.startTime {
+                    self.recordingDuration = Date().timeIntervalSince(startTime)
+                }
             }
         }
+        
+        // Store the timer reference 
+        self.timer = newTimer
+        
+        // Ensure timer doesn't get invalidated by RunLoop modes
+        RunLoop.current.add(newTimer, forMode: .common)
     }
     
     func loadAvailableContent() async {
@@ -492,996 +593,6 @@ class RecordingManager: ObservableObject {
         }
     }
     
-    private func createOutputURLs() -> (videoURL: URL, audioURL: URL?) {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        let timestamp = formatter.string(from: Date())
-        let baseName = "DidYouGetIt_\(timestamp)"
-        let videoFileName = "\(baseName).mov"
-        let audioFileName = "\(baseName)_audio.m4a"
-        
-        let documentsPath = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first!
-        print("Base output directory: \(documentsPath.path)")
-        
-        // Create folder for this recording session
-        let folderURL = documentsPath.appendingPathComponent(baseName, isDirectory: true)
-        
-        do {
-            try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true, attributes: nil)
-            print("Created recording directory: \(folderURL.path)")
-        } catch {
-            print("ERROR: Failed to create recording directory: \(error)")
-        }
-        
-        // Create URLs for tracking data
-        let mouseTrackingPath = folderURL.appendingPathComponent("\(baseName)_mouse.json")
-        let keyboardTrackingPath = folderURL.appendingPathComponent("\(baseName)_keyboard.json")
-        
-        print("Mouse tracking path: \(mouseTrackingPath.path)")
-        print("Keyboard tracking path: \(keyboardTrackingPath.path)")
-        
-        mouseTrackingURL = mouseTrackingPath
-        keyboardTrackingURL = keyboardTrackingPath
-        
-        // Return video and optional audio URLs
-        let videoURL = folderURL.appendingPathComponent(videoFileName)
-        print("Video output path: \(videoURL.path)")
-        
-        let audioURL: URL?
-        if let preferences = preferencesManager, !preferences.mixAudioWithVideo && preferences.recordAudio {
-            audioURL = folderURL.appendingPathComponent(audioFileName)
-            print("Separate audio output path: \(audioURL?.path ?? "nil")")
-        } else {
-            audioURL = nil
-            print("No separate audio file will be created (mixed with video or audio disabled)")
-        }
-        
-        return (videoURL, audioURL)
-    }
-    
-    private func setupCaptureSession() async throws {
-        print("Setting up capture session...")
-        
-        // Create and validate output URLs
-        let urls = createOutputURLs()
-        videoOutputURL = urls.videoURL
-        audioOutputURL = urls.audioURL
-        
-        guard let videoURL = videoOutputURL else {
-            print("ERROR: Failed to create video output URL")
-            throw NSError(domain: "RecordingManager", code: 1001, userInfo: [NSLocalizedDescriptionKey: "Failed to create video output URL"])
-        }
-        
-        // Store the URL string for persistence
-        UserDefaults.standard.set(videoURL.absoluteString, forKey: RecordingManager.videoOutputURLKey)
-        print("Saved video output URL to UserDefaults: \(videoURL.absoluteString)")
-        
-        // Check and request audio permission if needed
-        let shouldRecordAudio = preferencesManager?.recordAudio == true
-        if shouldRecordAudio {
-            print("Audio recording is enabled, requesting permissions...")
-            let audioPermission = await AVCaptureDevice.requestAccess(for: .audio)
-            if !audioPermission {
-                print("WARNING: Audio permission denied")
-            } else {
-                print("Audio permission granted")
-            }
-        } else {
-            print("Audio recording is disabled")
-        }
-        
-        // Get the content to capture
-        print("Refreshing available content...")
-        _ = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        
-        // Create stream configuration
-        print("Configuring stream settings...")
-        let scConfig = SCStreamConfiguration()
-        self.streamConfig = scConfig // Store for later use
-        
-        scConfig.queueDepth = 5 // Increase queue depth for smoother capture
-        
-        // Set initial dimensions to HD as default
-        scConfig.width = 1920
-        scConfig.height = 1080
-        
-        // Set frame rate based on preferences
-        let frameRate = preferencesManager?.frameRate ?? 60
-        print("Setting frame rate to \(frameRate) FPS")
-        scConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(frameRate))
-        
-        // Configure pixel format (BGRA is standard for macOS screen capture)
-        scConfig.pixelFormat = kCVPixelFormatType_32BGRA
-        scConfig.scalesToFit = true
-        
-        // Set aspect ratio preservation if available
-        if #available(macOS 14.0, *) {
-            scConfig.preservesAspectRatio = true
-            print("Aspect ratio preservation enabled (macOS 14+)")
-        } else {
-            print("Aspect ratio preservation not available (requires macOS 14+)")
-        }
-        
-        // Configure audio capture if needed
-        if preferencesManager?.recordAudio == true {
-            print("Configuring audio capture...")
-            scConfig.capturesAudio = true
-            
-            // Configure audio settings - exclude app's own audio
-            scConfig.excludesCurrentProcessAudio = true
-            print("Audio capture enabled, excluding current process audio")
-        }
-        
-        // Get the display or window to capture
-        print("Setting up content filter based on capture type: \(captureType)")
-        let contentFilter: SCContentFilter
-        switch captureType {
-        case .display:
-            guard let display = selectedScreen else {
-                print("ERROR: No display selected for display capture")
-                throw NSError(domain: "RecordingManager", code: 1002, userInfo: [NSLocalizedDescriptionKey: "No display selected"])
-            }
-            
-            // Update configuration for display resolution with Retina support
-            let screenWidth = Int(display.frame.width)
-            let screenHeight = Int(display.frame.height)
-            let scale = 2 // Retina scale factor
-            
-            scConfig.width = screenWidth * scale
-            scConfig.height = screenHeight * scale
-            print("Capturing display \(display.displayID) at \(screenWidth * scale) x \(screenHeight * scale) (with Retina scaling)")
-            
-            // Create content filter for the display with no window exclusions
-            contentFilter = SCContentFilter(display: display, excludingWindows: [])
-            
-        case .window:
-            guard let window = selectedWindow else {
-                print("ERROR: No window selected for window capture")
-                throw NSError(domain: "RecordingManager", code: 1003, userInfo: [NSLocalizedDescriptionKey: "No window selected"])
-            }
-            
-            let windowWidth = Int(window.frame.width)
-            let windowHeight = Int(window.frame.height)
-            let scale = 2 // Retina scale factor
-            
-            scConfig.width = windowWidth * scale
-            scConfig.height = windowHeight * scale
-            print("Capturing window '\(window.title ?? "Untitled")' at \(windowWidth * scale) x \(windowHeight * scale) (with Retina scaling)")
-            
-            // Create content filter for the specific window
-            contentFilter = SCContentFilter(desktopIndependentWindow: window)
-            
-        case .area:
-            guard let display = selectedScreen, let area = recordingArea else {
-                print("ERROR: No display or area selected for area capture")
-                throw NSError(domain: "RecordingManager", code: 1004, userInfo: [NSLocalizedDescriptionKey: "No display or area selected"])
-            }
-            
-            let areaWidth = Int(area.width)
-            let areaHeight = Int(area.height)
-            let scale = 2 // Retina scale factor
-            
-            // IMPORTANT: The streamConfig dimensions MUST match the area for proper recording
-            scConfig.width = areaWidth * scale
-            scConfig.height = areaHeight * scale
-            print("Capturing area at \(areaWidth * scale) x \(areaHeight * scale) (with Retina scaling)")
-            
-            // For area selection we need a specific content filter
-            let rect = CGRect(x: area.origin.x, y: area.origin.y, width: area.width, height: area.height)
-            print("Area coordinates: (\(Int(rect.origin.x)), \(Int(rect.origin.y))) with size \(Int(rect.width))×\(Int(rect.height))")
-            
-            // For capture areas, we need to capture the whole display and then crop
-            // in the video settings to the area we want
-            contentFilter = SCContentFilter(display: display, excludingWindows: [])
-            print("Using full display filter with area cropping")
-        }
-        
-        // Create the stream with the configured filter and settings
-        print("Creating SCStream with configured filter and settings")
-        captureSession = SCStream(filter: contentFilter, configuration: scConfig, delegate: nil)
-        
-        // Make sure existing files at destination URLs are removed to avoid collision issues
-        // This ensures we have a clean slate for writing
-        print("Checking for existing files at destination paths")
-        let fileManager = FileManager.default
-        
-        if fileManager.fileExists(atPath: videoURL.path) {
-            print("Found existing video file, removing: \(videoURL.path)")
-            do {
-                try fileManager.removeItem(at: videoURL)
-                print("Successfully removed existing video file")
-            } catch {
-                print("WARNING: Could not remove existing file at \(videoURL.path): \(error)")
-            }
-        }
-        
-        if let audioURL = audioOutputURL, fileManager.fileExists(atPath: audioURL.path) {
-            print("Found existing audio file, removing: \(audioURL.path)")
-            do {
-                try fileManager.removeItem(at: audioURL)
-                print("Successfully removed existing audio file")
-            } catch {
-                print("WARNING: Could not remove existing file at \(audioURL.path): \(error)")
-            }
-        }
-        
-        // Verify the directory for video output exists and is writable
-        do {
-            let videoDirectory = videoURL.deletingLastPathComponent()
-            var isDirectory: ObjCBool = false
-            
-            if !FileManager.default.fileExists(atPath: videoDirectory.path, isDirectory: &isDirectory) || !isDirectory.boolValue {
-                try FileManager.default.createDirectory(at: videoDirectory, withIntermediateDirectories: true)
-                print("Created directory for video output: \(videoDirectory.path)")
-            }
-            
-            // Test write access
-            let testPath = videoDirectory.appendingPathComponent(".write_test").path
-            try "test".write(toFile: testPath, atomically: true, encoding: .utf8)
-            try FileManager.default.removeItem(atPath: testPath)
-            print("✓ Directory is writable: \(videoDirectory.path)")
-        } catch {
-            print("CRITICAL ERROR: Cannot access or write to video directory: \(error.localizedDescription)")
-            throw NSError(domain: "RecordingManager", code: 1020, 
-                         userInfo: [NSLocalizedDescriptionKey: "Cannot access or write to directory. Please check permissions."])
-        }
-        
-        // Set up video asset writer with extensive error handling
-        print("Creating video asset writer with output URL: \(videoURL.path)")
-        do {
-            videoAssetWriter = try AVAssetWriter(outputURL: videoURL, fileType: .mov)
-            
-            // Verify the writer was created successfully
-            guard let writer = videoAssetWriter else {
-                throw NSError(domain: "RecordingManager", code: 1021, 
-                             userInfo: [NSLocalizedDescriptionKey: "Failed to create video asset writer - writer is nil"])
-            }
-            
-            // Check writer status
-            if writer.status != .unknown {
-                print("WARNING: Video asset writer has unexpected initial status: \(writer.status.rawValue)")
-            }
-            
-            print("✓ Video asset writer created successfully, initial status: \(writer.status.rawValue)")
-        } catch {
-            print("CRITICAL ERROR: Failed to create video asset writer: \(error)")
-            throw error
-        }
-        
-        // Set up separate audio asset writer if needed
-        if let audioURL = audioOutputURL {
-            print("Creating separate audio asset writer with output URL: \(audioURL.path)")
-            do {
-                audioAssetWriter = try AVAssetWriter(outputURL: audioURL, fileType: .m4a)
-                print("Audio asset writer created successfully")
-            } catch {
-                print("ERROR: Failed to create audio asset writer: \(error)")
-                throw error
-            }
-        }
-        
-        // Configure video input with settings
-        print("Configuring video input settings")
-        
-        // Get video quality settings from preferences
-        let videoQuality = preferencesManager?.videoQuality ?? .high
-        let bitrate: Int
-        
-        // Scale bitrate based on resolution and quality setting
-        switch videoQuality {
-        case .low:
-            bitrate = 5_000_000 // 5 Mbps
-        case .medium:
-            bitrate = 10_000_000 // 10 Mbps
-        case .high:
-            bitrate = 20_000_000 // 20 Mbps
-        case .lossless:
-            bitrate = 50_000_000 // 50 Mbps
-        }
-        
-        print("Using video quality: \(videoQuality.rawValue) with bitrate: \(bitrate/1_000_000) Mbps")
-        
-        // Configure video settings with appropriate parameters
-        // Add additional settings for more reliable encoding
-        var videoSettings: [String: Any] = [
-            AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: streamConfig?.width ?? 1920,
-            AVVideoHeightKey: streamConfig?.height ?? 1080,
-            AVVideoCompressionPropertiesKey: [
-                AVVideoAverageBitRateKey: bitrate,
-                AVVideoExpectedSourceFrameRateKey: frameRate,
-                AVVideoMaxKeyFrameIntervalKey: frameRate, 
-                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
-                // Add these reliability settings
-                AVVideoAllowFrameReorderingKey: false,    // Disable frame reordering for streaming
-                AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCABAC, // Use CABAC for better quality
-                "RequiresBFrames": false                  // Avoid B-frames for better streaming
-            ]
-        ]
-        
-        // Log detailed configuration for debugging
-        print("VIDEO CONFIG: Width=\(streamConfig?.width ?? 1920), Height=\(streamConfig?.height ?? 1080), BitRate=\(bitrate/1_000_000)Mbps, FrameRate=\(frameRate)")
-        
-        // For area captures, log info about settings
-        if captureType == .area, let area = recordingArea {
-            print("Video settings for area capture: width=\(streamConfig?.width ?? 0), height=\(streamConfig?.height ?? 0)")
-            print("Selected area: \(Int(area.width)) x \(Int(area.height)) at (\(Int(area.origin.x)), \(Int(area.origin.y)))")
-        }
-        
-        videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
-        guard let videoInput = videoInput else {
-            throw NSError(domain: "RecordingManager", code: 1005, userInfo: [NSLocalizedDescriptionKey: "Failed to create video input"])
-        }
-        
-        videoInput.expectsMediaDataInRealTime = true
-        
-        guard let videoWriter = videoAssetWriter, videoWriter.canAdd(videoInput) else {
-            throw NSError(domain: "RecordingManager", code: 1006, userInfo: [NSLocalizedDescriptionKey: "Cannot add video input to asset writer"])
-        }
-        
-        videoWriter.add(videoInput)
-        
-        // Set up audio input if needed
-        if preferencesManager?.recordAudio == true {
-            let audioSettings: [String: Any] = [
-                AVFormatIDKey: kAudioFormatMPEG4AAC,
-                AVNumberOfChannelsKey: 2,
-                AVSampleRateKey: 44100.0,
-                AVEncoderBitRateKey: 128000
-            ]
-            
-            audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
-            
-            if let audioInput = audioInput {
-                audioInput.expectsMediaDataInRealTime = true
-                
-                if preferencesManager?.mixAudioWithVideo == true {
-                    // Add audio to video file
-                    if videoWriter.canAdd(audioInput) {
-                        videoWriter.add(audioInput)
-                    } else {
-                        print("Warning: Cannot add audio input to video asset writer")
-                    }
-                } else if let audioAssetWriter = audioAssetWriter {
-                    // Add audio to separate file
-                    if audioAssetWriter.canAdd(audioInput) {
-                        audioAssetWriter.add(audioInput)
-                    } else {
-                        print("Warning: Cannot add audio input to audio asset writer")
-                    }
-                }
-            }
-        }
-        
-        // Start asset writers with error checking
-        print("Starting video asset writer...")
-        if videoWriter.status != .unknown {
-            print("WARNING: Video writer has unexpected status before starting: \(videoWriter.status.rawValue)")
-        }
-        
-        videoWriter.startWriting()
-        
-        // Verify video writer started successfully
-        if videoWriter.status != .writing {
-            print("CRITICAL ERROR: Video writer failed to start writing. Status: \(videoWriter.status.rawValue)")
-            if let error = videoWriter.error {
-                print("CRITICAL ERROR: Video writer error: \(error.localizedDescription)")
-                throw error
-            } else {
-                throw NSError(domain: "RecordingManager", code: 1022, 
-                             userInfo: [NSLocalizedDescriptionKey: "Failed to start video writer - not in writing state"])
-            }
-        } else {
-            print("✓ Video writer started successfully, status: \(videoWriter.status.rawValue)")
-        }
-        
-        // Start audio writer if needed
-        if let audioWriter = audioAssetWriter {
-            print("Starting audio asset writer...")
-            if audioWriter.status != .unknown {
-                print("WARNING: Audio writer has unexpected status before starting: \(audioWriter.status.rawValue)")
-            }
-            
-            audioWriter.startWriting()
-            
-            // Verify audio writer started successfully
-            if audioWriter.status != .writing {
-                print("WARNING: Audio writer failed to start writing. Status: \(audioWriter.status.rawValue)")
-                if let error = audioWriter.error {
-                    print("WARNING: Audio writer error: \(error.localizedDescription)")
-                    // Continue without audio rather than throwing error
-                } 
-            } else {
-                print("✓ Audio writer started successfully, status: \(audioWriter.status.rawValue)")
-            }
-        }
-        
-        // Start capturing
-        try await startCapture()
-    }
-    
-    private func startCapture() async throws {
-        guard let stream = captureSession else {
-            throw NSError(domain: "RecordingManager", code: 1010, userInfo: [NSLocalizedDescriptionKey: "No capture session available"])
-        }
-        
-        // Reset diagnostic counters
-        videoFramesProcessed = 0
-        audioSamplesProcessed = 0
-        
-        // Ensure writers are ready before starting capture
-        guard let videoWriter = videoAssetWriter, videoWriter.status == .writing else {
-            throw NSError(domain: "RecordingManager", code: 1011, userInfo: [NSLocalizedDescriptionKey: "Video asset writer is not ready for writing"])
-        }
-        
-        if let audioWriter = audioAssetWriter {
-            guard audioWriter.status == .writing else {
-                throw NSError(domain: "RecordingManager", code: 1012, userInfo: [NSLocalizedDescriptionKey: "Audio asset writer is not ready for writing"])
-            }
-        }
-        
-        print("Starting capture with writers prepared...")
-        
-        // Create a handler for the stream frames
-        let handler: (CMSampleBuffer, SCStreamType) -> Void = { [weak self] sampleBuffer, type in
-            guard let self = self else { 
-                print("ERROR: Self is nil in stream handler")
-                return 
-            }
-            
-            // Important: Don't check isRecording here since this is called before 
-            // isRecording is set to true in the startRecordingAsync method
-            if self.isPaused {
-                print("Recording is paused, skipping frame processing")
-                return
-            }
-            
-            // First ensure the sample buffer is valid before attempting to copy
-            guard CMSampleBufferIsValid(sampleBuffer) else {
-                print("ERROR: Invalid sample buffer received from stream")
-                return
-            }
-            
-            // Create a local copy of the buffer to avoid potential threading issues
-            // This is critical for preventing buffer loss during transfers between queues
-            var newBuffer: CMSampleBuffer?
-            
-            // Clone the sample buffer to ensure it remains valid
-            let status = CMSampleBufferCreateCopy(allocator: kCFAllocatorDefault, sampleBuffer: sampleBuffer, sampleBufferOut: &newBuffer)
-            
-            if status != noErr || newBuffer == nil {
-                print("WARNING: Failed to create copy of sample buffer (status: \(status))")
-                // Fallback to using the original buffer if copy failed
-                newBuffer = sampleBuffer
-            }
-            
-            // Final validity check before processing
-            if let safeSampleBuffer = newBuffer, CMSampleBufferIsValid(safeSampleBuffer) {
-                // Check if there's a valid image buffer for video frames
-                if type == .screen && CMSampleBufferGetImageBuffer(safeSampleBuffer) == nil {
-                    print("ERROR: Invalid pixel buffer in sample buffer - skipping frame")
-                    return
-                }
-                
-                // Use Task with high priority to dispatch back to the main actor
-                // This is critical for handling frames in real-time
-                Task(priority: .userInitiated) { @MainActor in
-                    switch type {
-                    case .screen:
-                        // Process screen frames immediately and report success/failure
-                        if !self.processSampleBuffer(safeSampleBuffer) {
-                            // Only log errors occasionally to avoid flooding the console
-                            if self.videoFramesProcessed == 0 || self.videoFramesProcessed % 60 == 0 {                           
-                                print("ERROR: Failed to process video frame #\(self.videoFrameLogCounter)")
-                            }
-                        }
-                    case .audio:
-                        // Process audio samples immediately
-                        if !self.processAudioSampleBuffer(safeSampleBuffer) {
-                            // Only log errors occasionally to avoid flooding the console
-                            if self.audioSamplesProcessed == 0 || self.audioSamplesProcessed % 60 == 0 {
-                                print("ERROR: Failed to process audio sample #\(self.audioSampleLogCounter)")
-                            }
-                        }
-                    @unknown default:
-                        print("Unknown sample type, cannot process")
-                        break
-                    }
-                }
-            } else {
-                print("ERROR: Invalid sample buffer after copy attempt - cannot process")
-            }
-        }
-        
-        // Create output with handler
-        let output = SCStreamFrameOutput(handler: handler)
-        
-        // Create dedicated dispatch queues with high QoS to ensure performance
-        let screenQueue = DispatchQueue(label: "it.didyouget.screenCaptureQueue", qos: .userInteractive)
-        let audioQueue = DispatchQueue(label: "it.didyouget.audioCaptureQueue", qos: .userInteractive)
-        
-        // Add screen output on the dedicated queue
-        try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: screenQueue)
-        print("Screen capture output added successfully")
-        
-        // Add audio output if needed on separate queue
-        if preferencesManager?.recordAudio == true {
-            // Add microphone output
-            try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: audioQueue)
-            print("Audio capture output added successfully")
-        }
-        
-        // Start stream capture
-        print("Starting SCStream capture...")
-        try await stream.startCapture()
-        print("SCStream capture started successfully")
-        
-        // Start writer sessions with a valid time base
-        print("Starting video writer session at time zero...")
-        
-        // Create a more reliable time base - explicitly use CMTime.zero
-        let sessionStartTime = CMTime.zero
-        
-        // Set timestamp synchronization variables
-        self.startTime = Date()
-        
-        // Start the session with the fixed start time
-        videoWriter.startSession(atSourceTime: sessionStartTime)
-        
-        // Verify session started correctly
-        if videoWriter.status != .writing {
-            print("CRITICAL ERROR: Video writer not in writing state after starting session. Status: \(videoWriter.status.rawValue)")
-            if let error = videoWriter.error {
-                print("CRITICAL ERROR: Video writer error after starting session: \(error.localizedDescription)")
-            }
-        } else {
-            print("✓ Video writer session started successfully at time zero")
-            
-            // Immediately force file creation to detect any permission/path issues early
-            // This helps ensure the file is properly created on disk
-            do {
-                let fileManager = FileManager.default
-                if !fileManager.fileExists(atPath: videoWriter.outputURL.path) {
-                    // Create an empty file to test permissions
-                    try Data().write(to: videoWriter.outputURL)
-                    print("✓ Empty video file created for writer initialization")
-                } else {
-                    print("✓ Video file already exists at path")
-                }
-            } catch {
-                print("CRITICAL ERROR: Unable to create file at path: \(videoWriter.outputURL.path)")
-                print("Error details: \(error.localizedDescription)")
-            }
-        }
-        
-        // Start audio session if needed
-        if let audioWriter = audioAssetWriter {
-            print("Starting audio writer session at time zero...")
-            audioWriter.startSession(atSourceTime: sessionStartTime)
-            
-            // Verify audio session started correctly
-            if audioWriter.status != .writing {
-                print("WARNING: Audio writer not in writing state after starting session. Status: \(audioWriter.status.rawValue)")
-                if let error = audioWriter.error {
-                    print("WARNING: Audio writer error after starting session: \(error.localizedDescription)")
-                }
-            } else {
-                print("✓ Audio writer session started successfully at time zero")
-            }
-        }
-    }
-    
-    @MainActor
-    private func processSampleBuffer(_ sampleBuffer: CMSampleBuffer) -> Bool {
-        // Debug logging to track frequency of frame arrivals
-        videoFrameLogCounter += 1
-        
-        // Log only the first frame and then occasionally to avoid flooding console
-        let shouldLogDetail = videoFrameLogCounter == 1 || videoFrameLogCounter % 300 == 0
-        
-        if shouldLogDetail {
-            print("VIDEO FRAME: Processing frame #\(videoFrameLogCounter)")
-        }
-        
-        // For the SCStream handler that runs before recording is formally started
-        // we should NOT check isRecording flag here since the frames might arrive
-        // before isRecording is set to true in the UI but after the asset writer
-        // has been initialized
-        
-        // Only skip if explicitly paused
-        if isPaused {
-            if shouldLogDetail {
-                print("VIDEO FRAME: Skipping - recording is paused")
-            }
-            return false
-        }
-        
-        // Before using a potentially less reliable buffer, validate it
-        guard CMSampleBufferDataIsReady(sampleBuffer) else {
-            print("ERROR: Video sample buffer data is not ready")
-            return false
-        }
-        
-        // Get additional buffer info for debugging
-        if shouldLogDetail {
-            let presentationTimeStamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-            let duration = CMSampleBufferGetDuration(sampleBuffer)
-            print("VIDEO FRAME: PTS=\(presentationTimeStamp.seconds)s, Duration=\(duration.seconds)s")
-            
-            if let formatDesc = CMSampleBufferGetFormatDescription(sampleBuffer) {
-                let dimensions = CMVideoFormatDescriptionGetDimensions(formatDesc)
-                print("VIDEO FRAME: Dimensions=\(dimensions.width)x\(dimensions.height)")
-            }
-        }
-        
-        // Access these properties on the main actor
-        guard let videoInput = videoInput else {
-            print("ERROR: Video input is nil")
-            return false
-        }
-        
-        guard let writer = videoAssetWriter else {
-            print("ERROR: Video asset writer is nil")
-            return false
-        }
-        
-        guard writer.status == .writing else {
-            print("ERROR: Writer is not in writing state. Current state: \(writer.status.rawValue)")
-            return false
-        }
-        
-        guard videoInput.isReadyForMoreMediaData else {
-            print("WARNING: Video input is not ready for more data")
-            return false
-        }
-        
-        // Get timing info from the sample buffer
-        if let attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [Any],
-           let attachments = attachmentsArray.first as? [String: Any] {
-            // Skip samples with discontinuity flag - using string literal "discontinuity"
-            if let discontinuity = attachments["discontinuity"] as? Bool, discontinuity {
-                print("WARNING: Skipping discontinuous sample buffer")
-                return false
-            }
-        }
-        
-        // Debug AVAssetWriter status before attempting to append
-        print("WRITER DEBUG: Before append - Status: \(writer.status.rawValue), Input ready: \(videoInput.isReadyForMoreMediaData)")
-        
-        // Force flush any pending writes
-        if videoFramesProcessed > 0 && videoFramesProcessed % 100 == 0 {
-            print("WRITER DEBUG: Performing explicit file write flush")
-            do {
-                _ = try FileManager.default.attributesOfItem(atPath: writer.outputURL.path)
-            } catch {
-                print("WRITER DEBUG: File not written yet or error: \(error.localizedDescription)")
-            }
-        }
-        
-        // Get the presentation timestamp and ensure it's valid
-        let presentationTimeStamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        
-        // Fix for potential zero-duration timestamp issues
-        var adjustedBuffer = sampleBuffer
-        
-        // Adjust timestamp if needed (handling potential negative timestamps or zero duration)
-        if presentationTimeStamp.seconds < 0 || CMTimeCompare(presentationTimeStamp, .zero) < 0 {
-            print("WARNING: Adjusting negative presentation timestamp")
-            // Create a modified buffer with adjusted timestamp if needed
-            if let sampleBuffer = adjustSampleBufferTimestamp(sampleBuffer) {
-                adjustedBuffer = sampleBuffer
-            }
-        }
-        
-        print("BUFFER DEBUG: PTS: \(presentationTimeStamp.seconds), Buffer valid: \(CMSampleBufferIsValid(adjustedBuffer) ? "Yes" : "No")")
-        
-        // Explicit check for frame rate
-        if let attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(adjustedBuffer, createIfNecessary: false) as? [Any],
-           let attachments = attachmentsArray.first as? [String: Any] {
-            if let fps = attachments["FPS"] as? Float {
-                print("BUFFER DEBUG: Framerate: \(fps) FPS")
-            }
-        }
-        
-        // Append the buffer with detailed error checking - use append with propTime to ensure proper timing
-        let success = videoInput.append(adjustedBuffer)
-        
-        if !success {
-            print("ERROR: Failed to append video sample buffer")
-            
-            // Check writer status for detailed diagnostics
-            print("CRITICAL: AVAssetWriter status = \(writer.status.rawValue)")
-            if let error = writer.error {
-                print("CRITICAL: AVAssetWriter error: \(error.localizedDescription)")
-                print("CRITICAL: Error details: \(error)")
-            }
-            
-            // Check if input is still ready after failed append
-            if !videoInput.isReadyForMoreMediaData {
-                print("ERROR: Video input is no longer ready for more data after failed append")
-            }
-            
-            // Check buffer timing
-            print("CRITICAL: Buffer timing - PTS=\(presentationTimeStamp.seconds)s, Duration=\(CMSampleBufferGetDuration(adjustedBuffer).seconds)s")
-            
-            // Check for common timing issues
-            if presentationTimeStamp.seconds < 0 {
-                print("CRITICAL: Negative presentation timestamp detected!")
-            }
-            
-            if CMTimeCompare(presentationTimeStamp, .zero) < 0 {
-                print("CRITICAL: Presentation timestamp is before zero time!")
-            }
-            
-            // Cannot recover within this session - just log the error
-            print("CRITICAL: Video frame processing failed. This session will likely produce an empty MOV file.")
-            print("CRITICAL: The recommended action is to stop recording and start a new session.")
-            
-            // Mark that we've had a critical error
-            videoFramesProcessed = -1 // Use negative value as an error indicator
-            
-            return false
-        } else {
-            // Keep track of processed frames for diagnostics
-            videoFramesProcessed += 1
-            
-            if videoFramesProcessed == 1 {
-                print("✓ VIDEO SUCCESS: First frame processed successfully!")
-                
-                // Immediate file size check after first frame
-                do {
-                    let fileManager = FileManager.default
-                    let attributes = try fileManager.attributesOfItem(atPath: writer.outputURL.path)
-                    if let fileSize = attributes[.size] as? UInt64 {
-                        print("✓ VIDEO FILE: Size after first frame = \(fileSize) bytes")
-                    }
-                } catch {
-                    print("WARNING: Unable to check video file size: \(error.localizedDescription)")
-                }
-            }
-            
-            // Log successful append periodically
-            if videoFramesProcessed % 60 == 0 {
-                print("✓ VIDEO SUCCESS: Processed \(videoFramesProcessed) video frames successfully")
-                print("✓ VIDEO WRITER: Status=\(writer.status.rawValue), URL=\(writer.outputURL.path)")
-                
-                // Print file size check
-                do {
-                    let fileManager = FileManager.default
-                    let attributes = try fileManager.attributesOfItem(atPath: writer.outputURL.path)
-                    if let fileSize = attributes[.size] as? UInt64 {
-                        print("✓ VIDEO FILE: Current size = \(fileSize) bytes")
-                    }
-                } catch {
-                    print("WARNING: Unable to check video file size: \(error.localizedDescription)")
-                }
-            }
-            
-            return true
-        }
-    }
-    
-    // Helper to adjust sample buffer timestamps if they're invalid
-    private func adjustSampleBufferTimestamp(_ sampleBuffer: CMSampleBuffer) -> CMSampleBuffer? {
-        // This function creates a new sample buffer with valid timing
-        // This is needed when SCStream provides frames with problematic timestamps
-        
-        // First, we need to extract the current timing info
-        let originalPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        var originalDuration = CMSampleBufferGetDuration(sampleBuffer)
-        
-        // If duration is invalid, use a default value (1/60 sec)
-        if CMTIME_IS_INVALID(originalDuration) || originalDuration.seconds.isNaN || originalDuration.seconds <= 0 {
-            originalDuration = CMTime(value: 1, timescale: 60) // 1/60 sec
-            print("WARNING: Using default duration for invalid sample buffer duration")
-        }
-        
-        // Check if the sample buffer has a valid format description
-        if CMSampleBufferGetFormatDescription(sampleBuffer) == nil {
-            print("ERROR: Cannot get format description from sample buffer")
-            return nil
-        }
-        
-        // Check if the sample buffer has valid data
-        if CMSampleBufferGetDataBuffer(sampleBuffer) == nil {
-            print("ERROR: Cannot get data buffer from sample buffer")
-            return nil
-        }
-        
-        // Create a new presentation timestamp starting from a valid time
-        // We'll use the current system time to ensure it's always positive
-        let currentTime = CMClockGetTime(CMClockGetHostTimeClock())
-        let adjustedPTS = videoFramesProcessed == 0 ? CMTime.zero : currentTime
-        
-        // Log the adjustment we're making
-        print("TIMESTAMP ADJUST: Original=\(originalPTS.seconds)s, Adjusted=\(adjustedPTS.seconds)s")
-        
-        // Create timing info array with the adjusted time
-        var timingInfo = CMSampleTimingInfo()
-        timingInfo.duration = originalDuration
-        timingInfo.presentationTimeStamp = adjustedPTS
-        timingInfo.decodeTimeStamp = .invalid
-        
-        // Create the new sample buffer with the adjusted timing
-        var adjustedBuffer: CMSampleBuffer?
-        let status = CMSampleBufferCreateCopyWithNewTiming(
-            allocator: kCFAllocatorDefault,
-            sampleBuffer: sampleBuffer,
-            sampleTimingEntryCount: 1,
-            sampleTimingArray: &timingInfo,
-            sampleBufferOut: &adjustedBuffer
-        )
-        
-        if status != noErr || adjustedBuffer == nil {
-            print("ERROR: Failed to create adjusted sample buffer, status: \(status)")
-            return nil
-        }
-        
-        return adjustedBuffer
-    }
-    
-    @MainActor
-    private func processAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer) -> Bool {
-        // Debug logging to track frequency of audio samples
-        audioSampleLogCounter += 1
-        
-        // Log only the first sample and then occasionally to avoid flooding console
-        let shouldLogDetail = audioSampleLogCounter == 1 || audioSampleLogCounter % 300 == 0
-        
-        if shouldLogDetail {
-            print("AUDIO SAMPLE: Processing sample #\(audioSampleLogCounter)")
-        }
-        
-        // For the SCStream handler that runs before recording is formally started
-        // we should NOT check isRecording flag here since the samples might arrive
-        // before isRecording is set to true in the UI but after the asset writer
-        // has been initialized
-        
-        // Only skip if explicitly paused
-        if isPaused {
-            if shouldLogDetail {
-                print("AUDIO SAMPLE: Skipping - recording is paused")
-            }
-            return false
-        }
-        
-        // Validate the sample buffer
-        guard CMSampleBufferDataIsReady(sampleBuffer) else {
-            print("ERROR: Audio sample buffer data is not ready")
-            return false
-        }
-        
-        // Get additional buffer info for debugging
-        if shouldLogDetail {
-            let presentationTimeStamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-            let duration = CMSampleBufferGetDuration(sampleBuffer)
-            print("AUDIO SAMPLE: PTS=\(presentationTimeStamp.seconds)s, Duration=\(duration.seconds)s")
-            
-            if let formatDesc = CMSampleBufferGetFormatDescription(sampleBuffer) {
-                if let audioStreamBasicDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDesc) {
-                    print("AUDIO SAMPLE: Sample Rate=\(audioStreamBasicDescription.pointee.mSampleRate)Hz, Channels=\(audioStreamBasicDescription.pointee.mChannelsPerFrame)")
-                }
-            }
-        }
-        
-        // Access properties directly on the main actor
-        guard let audioInput = audioInput else {
-            print("ERROR: Audio input is nil")
-            return false
-        }
-        
-        guard audioInput.isReadyForMoreMediaData else {
-            print("WARNING: Audio input is not ready for more data")
-            return false
-        }
-        
-        // Check for discontinuity flags
-        if let attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [Any],
-           let attachments = attachmentsArray.first as? [String: Any] {
-            // Skip samples with discontinuity flag - using string literal "discontinuity"
-            if let discontinuity = attachments["discontinuity"] as? Bool, discontinuity {
-                print("WARNING: Skipping discontinuous audio sample buffer")
-                return false
-            }
-        }
-        
-        // Get the mixing preference from the current state
-        guard let preferences = preferencesManager else {
-            print("ERROR: PreferencesManager is nil")
-            return false
-        }
-        
-        let isMixingAudio = preferences.mixAudioWithVideo
-        
-        var success = false
-        
-        // Check if we're mixing or using separate files
-        if isMixingAudio || audioAssetWriter == nil {
-            // Mixed with video or no separate audio writer
-            if let writer = videoAssetWriter, writer.status == .writing {
-                success = audioInput.append(sampleBuffer)
-            } else {
-                print("ERROR: Cannot append audio to video - writer not ready")
-            }
-        } else {
-            // Writing to separate file
-            if let writer = audioAssetWriter, writer.status == .writing {
-                success = audioInput.append(sampleBuffer)
-            } else {
-                print("ERROR: Cannot append audio to separate file - writer not ready")
-            }
-        }
-        
-        if !success {
-            print("ERROR: Failed to append audio sample buffer")
-            
-            // Check both writers for errors
-            if let writer = videoAssetWriter, preferences.mixAudioWithVideo {
-                print("AUDIO ERROR: Video writer status = \(writer.status.rawValue)")
-                if let error = writer.error {
-                    print("AUDIO ERROR: Video writer error: \(error.localizedDescription)")
-                }
-            }
-            
-            if let writer = audioAssetWriter, !preferences.mixAudioWithVideo {
-                print("AUDIO ERROR: Audio writer status = \(writer.status.rawValue)")
-                if let error = writer.error {
-                    print("AUDIO ERROR: Audio writer error: \(error.localizedDescription)")
-                }
-            }
-        } else {
-            // Track processed samples for diagnostics
-            audioSamplesProcessed += 1
-            if audioSamplesProcessed % 100 == 0 {
-                print("✓ AUDIO SUCCESS: Processed \(audioSamplesProcessed) audio samples")
-                
-                if preferences.mixAudioWithVideo {
-                    if let writer = videoAssetWriter {
-                        print("✓ AUDIO (mixed): Using video writer, Status=\(writer.status.rawValue)")
-                    }
-                } else {
-                    if let writer = audioAssetWriter, let url = audioOutputURL {
-                        print("✓ AUDIO (separate): Status=\(writer.status.rawValue), URL=\(url.path)")
-                        
-                        // Check file size of separate audio file
-                        do {
-                            let fileManager = FileManager.default
-                            let attributes = try fileManager.attributesOfItem(atPath: url.path)
-                            if let fileSize = attributes[.size] as? UInt64 {
-                                print("✓ AUDIO FILE: Current size = \(fileSize) bytes")
-                            }
-                        } catch {
-                            print("WARNING: Unable to check audio file size: \(error.localizedDescription)")
-                        }
-                    }
-                }
-            }
-            
-            return success
-        }
-        return false
-    }
-    
-    // Make preferencesManager internal for access in DidYouGetApp for diagnostics
-    var preferencesManager: PreferencesManager?
-    
-    func setPreferencesManager(_ manager: PreferencesManager) {
-        preferencesManager = manager
-        print("PreferencesManager set in RecordingManager: \(manager)")
-        
-        // Store reference in user defaults for emergency recovery
-        // This is a backup mechanism for critical app functionality
-        UserDefaults.standard.setValue(true, forKey: "preferencesManagerSet")
-    }
-    
-    func getPreferencesManager() -> PreferencesManager? {
-        // If preferences manager is nil but should be set, warn about it
-        if preferencesManager == nil && UserDefaults.standard.bool(forKey: "preferencesManagerSet") {
-            print("WARNING: PreferencesManager is nil but was previously set")
-        }
-        return preferencesManager
-    }
-    
     @MainActor
     func resetRecordingState() async {
         print("Resetting recording state")
@@ -1492,25 +603,16 @@ class RecordingManager: ObservableObject {
         recordingDuration = 0
         
         // Invalidate timers
-        timer?.invalidate()
-        timer = nil
-        
-        // Reset writer objects
-        captureSession = nil
-        videoAssetWriter = nil
-        audioAssetWriter = nil
-        videoInput = nil
-        audioInput = nil
+        if let timer = self.timer {
+            timer.invalidate()
+            self.timer = nil
+        }
         
         // Reset URLs
         videoOutputURL = nil
         audioOutputURL = nil
         mouseTrackingURL = nil
         keyboardTrackingURL = nil
-        
-        // Reset counters
-        videoFramesProcessed = 0
-        audioSamplesProcessed = 0
         
         // Reset start time
         startTime = nil
@@ -1532,242 +634,23 @@ class RecordingManager: ObservableObject {
         UserDefaults.standard.removeObject(forKey: RecordingManager.videoOutputURLKey)
     }
     
-    private func teardownCaptureSession() async throws {
-        print("\n=== STOPPING RECORDING ===\n")
+    // Make preferencesManager internal for access in DidYouGetApp for diagnostics
+    var preferencesManager: PreferencesManager?
+    
+    func setPreferencesManager(_ manager: PreferencesManager) {
+        preferencesManager = manager
+        print("PreferencesManager set in RecordingManager: \(manager)")
         
-        // Create a copy of URLs for verification
-        let videoURL = videoOutputURL
-        let audioURL = audioOutputURL
-        let mouseURL = mouseTrackingURL
-        let keyboardURL = keyboardTrackingURL
-        
-        print("Stopping recording session and processing files...")
-        print("Video frames processed during session: \(videoFramesProcessed)")
-        print("Audio samples processed during session: \(audioSamplesProcessed)")
-        
-        // Stop capture stream first
-        if let stream = captureSession {
-            do {
-                print("Stopping SCStream capture...")
-                try await stream.stopCapture()
-                print("Stream capture stopped successfully")
-            } catch {
-                print("ERROR: Error stopping capture stream: \(error)")
-                print("Continuing with teardown despite stream stop error")
-                // Continue with teardown even if stopCapture fails
-            }
-        } else {
-            print("WARNING: No capture session to stop")
-        }
-        
-        // Add a slight delay to ensure all buffers are flushed
-        print("Waiting for buffers to flush...")
-        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-        
-        // Mark inputs as finished
-        if let videoInput = videoInput {
-            print("Marking video input as finished")
-            videoInput.markAsFinished()
-        } else {
-            print("WARNING: No video input to mark as finished")
-        }
-        
-        if let audioInput = audioInput {
-            print("Marking audio input as finished")
-            audioInput.markAsFinished()
-        } else {
-            print("No audio input to mark as finished")
-        }
-        
-        print("Inputs marked as finished, waiting before finalizing files...")
-        
-        // Add another brief delay to ensure processing completes
-        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-        
-        // Finish writing to output files
-        var videoWriteError: Error? = nil
-        var audioWriteError: Error? = nil
-        
-        if let writer = videoAssetWriter {
-            print("Finalizing video file...")
-            
-            // Check file size BEFORE finalization
-            do {
-                let fileManager = FileManager.default
-                let outputURL = writer.outputURL
-                if fileManager.fileExists(atPath: outputURL.path) {
-                    let attrs = try fileManager.attributesOfItem(atPath: outputURL.path)
-                    if let fileSize = attrs[.size] as? UInt64 {
-                        print("PRE-FINALIZE VIDEO FILE SIZE: \(fileSize) bytes")
-                        
-                        if fileSize == 0 {
-                            print("CRITICAL WARNING: Video file is empty (0 bytes) before finalization!")
-                            
-                            // Try to dump detailed writer state for debugging
-                            print("WRITER STATE DUMP:")
-                            print("  - Status: \(writer.status.rawValue)")
-                            print("  - Error: \(writer.error?.localizedDescription ?? "nil")")
-                            print("  - Video frames processed: \(videoFramesProcessed)")
-                        } else {
-                            print("GOOD NEWS: Video file has content before finalization!")
-                        }
-                    }
-                } else {
-                    print("WARNING: Video file does not exist at path: \(outputURL.path)")
-                }
-            } catch {
-                print("WARNING: Error checking video file before finalization: \(error)")
-            }
-            
-            await writer.finishWriting()
-            if writer.status == .failed {
-                videoWriteError = writer.error
-                print("ERROR: Video asset writer failed: \(String(describing: writer.error))")
-            } else if writer.status == .completed {
-                print("Video successfully finalized")
-                
-                // Check file size AFTER finalization
-                let outputURL = writer.outputURL
-                do {
-                    let fileManager = FileManager.default
-                    if fileManager.fileExists(atPath: outputURL.path) {
-                        let attrs = try fileManager.attributesOfItem(atPath: outputURL.path)
-                        if let fileSize = attrs[.size] as? UInt64 {
-                            print("POST-FINALIZE VIDEO FILE SIZE: \(fileSize) bytes")
-                        }
-                    }
-                } catch {
-                    print("WARNING: Error checking video file after finalization: \(error)")
-                }
-            } else {
-                print("WARNING: Unexpected video writer status: \(writer.status.rawValue)")
-            }
-        } else {
-            print("WARNING: No video asset writer to finalize")
-        }
-        
-        if let audioWriter = audioAssetWriter {
-            print("Finalizing audio file...")
-            await audioWriter.finishWriting()
-            if audioWriter.status == .failed {
-                audioWriteError = audioWriter.error
-                print("ERROR: Audio asset writer failed: \(String(describing: audioWriter.error))")
-            } else if audioWriter.status == .completed {
-                print("Audio successfully finalized")
-            } else {
-                print("WARNING: Unexpected audio writer status: \(audioWriter.status.rawValue)")
-            }
-        } else {
-            print("No separate audio asset writer to finalize")
-        }
-        
-        // Extra delay to ensure filesystem operations complete
-        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-        
-        // Verify output files
-        print("Verifying output files...")
-        await verifyOutputFiles(videoURL: videoURL, audioURL: audioURL, mouseURL: mouseURL, keyboardURL: keyboardURL)
-        
-        // Clean up resources
-        print("Cleaning up resources...")
-        captureSession = nil
-        videoAssetWriter = nil
-        audioAssetWriter = nil
-        videoInput = nil
-        audioInput = nil
-        
-        // Release the URLs
-        videoOutputURL = nil
-        audioOutputURL = nil
-        mouseTrackingURL = nil
-        keyboardTrackingURL = nil
-        
-        print("Recording cleanup complete")
-        
-        // Report any errors that occurred during finishWriting
-        if let error = videoWriteError ?? audioWriteError {
-            print("ERROR: Throwing error from teardown: \(error)")
-            throw error
-        }
+        // Store reference in user defaults for emergency recovery
+        // This is a backup mechanism for critical app functionality
+        UserDefaults.standard.setValue(true, forKey: "preferencesManagerSet")
     }
     
-    private func verifyOutputFiles(videoURL: URL?, audioURL: URL?, mouseURL: URL?, keyboardURL: URL?) async {
-        print("\n=== RECORDING DIAGNOSTICS ===\n")
-        print("Video frames processed: \(videoFramesProcessed)")
-        print("Audio samples processed: \(audioSamplesProcessed)")
-        
-        // Helper function to check file size and validity
-        func checkFileStatus(url: URL?, fileType: String, expectedNonEmpty: Bool) {
-            guard let url = url else {
-                if expectedNonEmpty {
-                    print("ERROR: \(fileType) URL is nil but was expected to be present")
-                }
-                return
-            }
-            
-            print("Checking \(fileType) file: \(url.path)")
-            
-            if FileManager.default.fileExists(atPath: url.path) {
-                do {
-                    let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
-                    if let fileSize = attrs[.size] as? UInt64 {
-                        print("\(fileType) file size: \(fileSize) bytes")
-                        
-                        if fileSize == 0 {
-                            print("ERROR: \(fileType) file is empty (zero bytes)!")
-                            if fileType == "Video" {
-                                print("Common causes for empty video files:")
-                                print("1. No valid frames were received from the capture source")
-                                print("2. AVAssetWriter was not properly initialized or started")
-                                print("3. Stream configuration doesn't match the actual content being captured")
-                                print("4. There was an error in the capture/encoding pipeline")
-                            }
-                        } else if fileSize < 1000 && (fileType == "Video" || fileType == "Audio") {
-                            print("WARNING: \(fileType) file is suspiciously small (\(fileSize) bytes)")
-                        } else {
-                            print("✓ \(fileType) file successfully saved with size: \(fileSize) bytes")
-                        }
-                    } else {
-                        print("WARNING: Unable to read \(fileType) file size attribute")
-                    }
-                    
-                    // Print creation date for debugging
-                    if let creationDate = attrs[.creationDate] as? Date {
-                        print("\(fileType) file created at: \(creationDate)")
-                    }
-                } catch {
-                    print("ERROR: Failed to get \(fileType) file attributes: \(error)")
-                }
-            } else {
-                if expectedNonEmpty {
-                    print("ERROR: \(fileType) file not found at expected location: \(url.path)")
-                } else {
-                    print("\(fileType) file not created (not expected for this configuration)")
-                }
-            }
+    func getPreferencesManager() -> PreferencesManager? {
+        // If preferences manager is nil but should be set, warn about it
+        if preferencesManager == nil && UserDefaults.standard.bool(forKey: "preferencesManagerSet") {
+            print("WARNING: PreferencesManager is nil but was previously set")
         }
-        
-        // Get preferences for expected files
-        let preferences = preferencesManager
-        let shouldHaveVideo = true // Video is always expected
-        let shouldHaveSeparateAudio = preferences?.recordAudio == true && preferences?.mixAudioWithVideo == false
-        let shouldHaveMouse = preferences?.recordMouseMovements == true
-        let shouldHaveKeyboard = preferences?.recordKeystrokes == true
-        
-        // Check all output files
-        checkFileStatus(url: videoURL, fileType: "Video", expectedNonEmpty: shouldHaveVideo)
-        checkFileStatus(url: audioURL, fileType: "Audio", expectedNonEmpty: shouldHaveSeparateAudio)
-        checkFileStatus(url: mouseURL, fileType: "Mouse tracking", expectedNonEmpty: shouldHaveMouse)
-        checkFileStatus(url: keyboardURL, fileType: "Keyboard tracking", expectedNonEmpty: shouldHaveKeyboard)
-        
-        // If the video file is empty but we processed frames, something went wrong
-        if videoFramesProcessed > 0 {
-            if let url = videoURL, FileManager.default.fileExists(atPath: url.path) {
-                if let fileSize = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? UInt64, fileSize == 0 {
-                    print("\nCRITICAL ERROR: Processed \(videoFramesProcessed) frames but video file is empty!")
-                    print("This indicates a serious issue with the AVAssetWriter configuration or initialization.")
-                }
-            }
-        }
+        return preferencesManager
     }
 }

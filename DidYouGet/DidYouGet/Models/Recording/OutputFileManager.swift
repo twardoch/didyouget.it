@@ -1,0 +1,171 @@
+import Foundation
+
+@available(macOS 12.3, *)
+class OutputFileManager {
+    
+    struct RecordingPaths {
+        let baseDirectory: URL
+        let folderURL: URL
+        let videoURL: URL
+        let audioURL: URL?
+        let mouseTrackingURL: URL?
+        let keyboardTrackingURL: URL?
+    }
+    
+    static func createOutputURLs(recordAudio: Bool, mixAudioWithVideo: Bool, 
+                                 recordMouseMovements: Bool, recordKeystrokes: Bool) -> RecordingPaths {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let timestamp = formatter.string(from: Date())
+        let baseName = "DidYouGetIt_\(timestamp)"
+        let videoFileName = "\(baseName).mov"
+        let audioFileName = "\(baseName)_audio.m4a"
+        
+        let documentsPath = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first!
+        print("Base output directory: \(documentsPath.path)")
+        
+        // Create folder for this recording session
+        let folderURL = documentsPath.appendingPathComponent(baseName, isDirectory: true)
+        
+        // Verify if the directory exists already from a previous attempt
+        if FileManager.default.fileExists(atPath: folderURL.path) {
+            print("Recording directory already exists at: \(folderURL.path)")
+            // Try to clean up any existing files - they might be empty/corrupt from previous attempts
+            do {
+                let contents = try FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
+                for item in contents {
+                    try FileManager.default.removeItem(at: item)
+                    print("Cleaned up existing file: \(item.path)")
+                }
+            } catch {
+                print("WARNING: Failed to clean up existing directory: \(error)")
+            }
+        }
+        
+        // Now create or ensure the directory exists
+        do {
+            try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true, attributes: nil)
+            print("Created/verified recording directory: \(folderURL.path)")
+            
+            // Write a small test file to verify permissions
+            let testFile = folderURL.appendingPathComponent(".write_test")
+            try "test".write(to: testFile, atomically: true, encoding: .utf8)
+            try FileManager.default.removeItem(at: testFile)
+            print("✓ Successfully tested write permissions in directory")
+        } catch {
+            print("CRITICAL ERROR: Failed to create/access recording directory: \(error)")
+        }
+        
+        // Create URLs for tracking data
+        let mouseTrackingPath = recordMouseMovements ? 
+            folderURL.appendingPathComponent("\(baseName)_mouse.json") : nil
+        let keyboardTrackingPath = recordKeystrokes ? 
+            folderURL.appendingPathComponent("\(baseName)_keyboard.json") : nil
+        
+        if let mouseTrackingPath = mouseTrackingPath {
+            print("Mouse tracking path: \(mouseTrackingPath.path)")
+        }
+        
+        if let keyboardTrackingPath = keyboardTrackingPath {
+            print("Keyboard tracking path: \(keyboardTrackingPath.path)")
+        }
+        
+        // Create video and optional audio URLs
+        let videoURL = folderURL.appendingPathComponent(videoFileName)
+        print("Video output path: \(videoURL.path)")
+        
+        let audioURL: URL?
+        if recordAudio && !mixAudioWithVideo {
+            audioURL = folderURL.appendingPathComponent(audioFileName)
+            print("Separate audio output path: \(audioURL?.path ?? "nil")")
+        } else {
+            audioURL = nil
+            print("No separate audio file will be created (mixed with video or audio disabled)")
+        }
+        
+        return RecordingPaths(
+            baseDirectory: documentsPath,
+            folderURL: folderURL,
+            videoURL: videoURL,
+            audioURL: audioURL,
+            mouseTrackingURL: mouseTrackingPath,
+            keyboardTrackingURL: keyboardTrackingPath
+        )
+    }
+    
+    static func verifyOutputFiles(videoURL: URL?, audioURL: URL?, mouseURL: URL?, keyboardURL: URL?,
+                                 videoFramesProcessed: Int, audioSamplesProcessed: Int,
+                                 shouldHaveVideo: Bool, shouldHaveSeparateAudio: Bool,
+                                 shouldHaveMouse: Bool, shouldHaveKeyboard: Bool) {
+        print("\n=== RECORDING DIAGNOSTICS ===\n")
+        print("Video frames processed: \(videoFramesProcessed)")
+        print("Audio samples processed: \(audioSamplesProcessed)")
+        
+        // Helper function to check file size and validity
+        func checkFileStatus(url: URL?, fileType: String, expectedNonEmpty: Bool) {
+            guard let url = url else {
+                if expectedNonEmpty {
+                    print("ERROR: \(fileType) URL is nil but was expected to be present")
+                }
+                return
+            }
+            
+            print("Checking \(fileType) file: \(url.path)")
+            
+            if FileManager.default.fileExists(atPath: url.path) {
+                do {
+                    let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+                    if let fileSize = attrs[.size] as? UInt64 {
+                        print("\(fileType) file size: \(fileSize) bytes")
+                        
+                        if fileSize == 0 {
+                            print("ERROR: \(fileType) file is empty (zero bytes)!")
+                            if fileType == "Video" {
+                                print("Common causes for empty video files:")
+                                print("1. No valid frames were received from the capture source")
+                                print("2. AVAssetWriter was not properly initialized or started")
+                                print("3. Stream configuration doesn't match the actual content being captured")
+                                print("4. There was an error in the capture/encoding pipeline")
+                            }
+                        } else if fileSize < 1000 && (fileType == "Video" || fileType == "Audio") {
+                            print("WARNING: \(fileType) file is suspiciously small (\(fileSize) bytes)")
+                        } else {
+                            print("✓ \(fileType) file successfully saved with size: \(fileSize) bytes")
+                        }
+                    } else {
+                        print("WARNING: Unable to read \(fileType) file size attribute")
+                    }
+                    
+                    // Print creation date for debugging
+                    if let creationDate = attrs[.creationDate] as? Date {
+                        print("\(fileType) file created at: \(creationDate)")
+                    }
+                } catch {
+                    print("ERROR: Failed to get \(fileType) file attributes: \(error)")
+                }
+            } else {
+                if expectedNonEmpty {
+                    print("ERROR: \(fileType) file not found at expected location: \(url.path)")
+                } else {
+                    print("\(fileType) file not created (not expected for this configuration)")
+                }
+            }
+        }
+        
+        // Check all output files
+        checkFileStatus(url: videoURL, fileType: "Video", expectedNonEmpty: shouldHaveVideo)
+        checkFileStatus(url: audioURL, fileType: "Audio", expectedNonEmpty: shouldHaveSeparateAudio)
+        checkFileStatus(url: mouseURL, fileType: "Mouse tracking", expectedNonEmpty: shouldHaveMouse)
+        checkFileStatus(url: keyboardURL, fileType: "Keyboard tracking", expectedNonEmpty: shouldHaveKeyboard)
+        
+        // If the video file is empty but we processed frames, something went wrong
+        if videoFramesProcessed > 0 {
+            if let url = videoURL, FileManager.default.fileExists(atPath: url.path) {
+                if let fileSize = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? UInt64, fileSize == 0 {
+                    print("\nCRITICAL ERROR: Processed \(videoFramesProcessed) frames but video file is empty!")
+                    print("This indicates a serious issue with the AVAssetWriter configuration or initialization.")
+                }
+            }
+        }
+    }
+}

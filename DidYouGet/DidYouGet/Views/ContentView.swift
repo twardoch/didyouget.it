@@ -83,8 +83,11 @@ struct ContentView: View {
                     HStack(spacing: 8) {
                         // Stop button
                         Button(action: {
-                            // Use a detached Task for better UI responsiveness
-                            Task.detached(priority: .userInitiated) {
+                            // Execute on the main thread with a Task to handle async
+                            Task(priority: .userInitiated) {
+                                // Make UI changes immediately
+                                recordingManager.isRecording = false 
+                                // Then stop the recording in the background
                                 await recordingManager.stopRecording()
                             }
                         }) {
@@ -145,9 +148,9 @@ struct ContentView: View {
                 
                 // Simplified and unified segmented control
                 Picker("", selection: $recordingManager.captureType) {
-                    Label("Display", systemImage: "display").tag(RecordingManager.CaptureType.display)
-                    Label("Window", systemImage: "macwindow").tag(RecordingManager.CaptureType.window)
-                    Label("Area", systemImage: "rectangle.on.rectangle").tag(RecordingManager.CaptureType.area)
+                    Label("Display", systemImage: "display").tag(CaptureSessionManager.CaptureType.display)
+                    Label("Window", systemImage: "macwindow").tag(CaptureSessionManager.CaptureType.window)
+                    Label("Area", systemImage: "rectangle.on.rectangle").tag(CaptureSessionManager.CaptureType.area)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
