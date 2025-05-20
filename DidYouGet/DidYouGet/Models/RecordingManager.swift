@@ -131,9 +131,6 @@ class RecordingManager: ObservableObject {
         // Reset any existing recording state first
         await resetRecordingState()
         
-        // Now explicitly set isRecording to true
-        isRecording = true
-        
         print("\n=== STARTING RECORDING ===\n")
         
         // Check if we have all the required parameters before starting
@@ -204,18 +201,26 @@ class RecordingManager: ObservableObject {
         // Store the timer
         self.timer = timer
         
-        // Set up capture session with comprehensive error handling
-        print("Setting up capture session")
-        try await setupCaptureSession()
-
-        // Start input tracking if enabled
-        print("Starting input tracking")
-        startInputTracking()
-
-        // Mark recording state as active only after everything succeeded
-        isRecording = true
-
-        print("Recording started successfully")
+        do {
+            // Set up capture session with comprehensive error handling
+            print("Setting up capture session")
+            try await setupCaptureSession()
+            
+            // Start input tracking if enabled
+            print("Starting input tracking")
+            startInputTracking()
+            
+            // Set recording state to true ONLY after all setup is complete
+            isRecording = true
+            startTime = Date()  // Ensure startTime is set after recording is confirmed started
+            
+            print("Recording started successfully")
+        } catch {
+            // If we hit any errors, reset the recording state
+            print("ERROR: Failed during recording setup: \(error)")
+            await resetRecordingState()
+            throw error
+        }
     }
     
     @MainActor
@@ -769,8 +774,8 @@ class RecordingManager: ObservableObject {
     
     @MainActor
     private func processSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
-        // Completely skip processing if we're paused
-        guard !isPaused else { return }
+        // Completely skip processing if we're paused or not recording
+        guard isRecording && !isPaused else { return }
         
         // Before using a potentially less reliable buffer, validate it
         guard CMSampleBufferDataIsReady(sampleBuffer) else {
@@ -825,8 +830,8 @@ class RecordingManager: ObservableObject {
     
     @MainActor
     private func processAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
-        // Skip processing if paused
-        guard !isPaused else { return }
+        // Skip processing if paused or not recording
+        guard isRecording && !isPaused else { return }
         
         // Validate the sample buffer
         guard CMSampleBufferDataIsReady(sampleBuffer) else {

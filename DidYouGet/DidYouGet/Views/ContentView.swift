@@ -36,25 +36,17 @@ struct ContentView: View {
                 if !recordingManager.isRecording {
                     Button(action: {
                         // Use a detached Task to avoid blocking the UI thread
-                        Task.detached(priority: .userInitiated) {
-                            // Then dispatch back to main thread for the actual operation
-                            await MainActor.run {
-                                // Show immediate feedback by setting isRecording to true
-                                // This will update the UI right away
-                                recordingManager.isRecording = true
-                                
-                                // Start actual recording in a separate task to prevent UI freeze
-                                Task {
-                                    do {
-                                        // Now we can start the actual recording process
-                                        // If it fails, we'll reset isRecording
-                                        try await recordingManager.startRecordingAsync()
-                                    } catch {
-                                        // Handle errors and reset UI state
-                                        print("Error starting recording: \(error.localizedDescription)")
-                                        recordingManager.isRecording = false
-                                        recordingManager.showAlert(title: "Recording Error", message: error.localizedDescription)
-                                    }
+                        // Use Task with user initiated priority for recording operation
+                        Task(priority: .userInitiated) {
+                            do {
+                                // Start the actual recording process on the main actor
+                                // The RecordingManager will handle setting isRecording once setup is complete
+                                try await recordingManager.startRecordingAsync()
+                            } catch {
+                                // Handle errors
+                                print("Error starting recording: \(error.localizedDescription)")
+                                await MainActor.run {
+                                    recordingManager.showAlert(title: "Recording Error", message: error.localizedDescription)
                                 }
                             }
                         }
