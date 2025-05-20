@@ -1,10 +1,10 @@
 
 STILL NOT FIXED ISSUES:
 
-- [ ] After clicking Record, the timer does not start running
-- [ ] Stop button does not change back to Record button after I click Stop
-- [ ] The app creates empty folders, no files inside
-- [ ] Previously the app did create the keystrokes JSON and the mouse JSON, but it always created a zero-length MOV file, never a proper video file.
+- [x] After clicking Record, the timer does not start running
+- [x] Stop button does not change back to Record button after I click Stop
+- [x] The app creates empty folders, no files inside
+- [x] Previously the app did create the keystrokes JSON and the mouse JSON, but it always created a zero-length MOV file, never a proper video file.
 
 
 ```

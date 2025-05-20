@@ -288,6 +288,7 @@
 - Resolved timer initialization that prevented the recording timer from starting
 - Implemented immediate UI state updates during stop recording process
 - Fixed critical issue with zero-length video files by implementing timestamp validation and buffer handling
+- Added automatic cleanup of unfinished recording folders when setup fails
 - Created project specification (SPEC.md)
 - Initialized progress tracking (PROGRESS.md)
 - Set up complete project structure with SwiftUI
