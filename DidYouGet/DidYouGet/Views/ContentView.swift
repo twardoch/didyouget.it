@@ -351,6 +351,12 @@ struct ContentView: View {
         .frame(width: 380)
         .padding(.vertical, 16)
         .background(Color(.windowBackgroundColor))
+        .onAppear {
+            // Reset recording state when view appears
+            Task {
+                await recordingManager.resetRecordingState()
+            }
+        }
     }
     
     private func timeString(from interval: TimeInterval) -> String {

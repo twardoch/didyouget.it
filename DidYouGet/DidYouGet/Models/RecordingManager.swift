@@ -128,10 +128,11 @@ class RecordingManager: ObservableObject {
     
     @MainActor
     func startRecordingAsync() async throws {
-        guard !isRecording else { 
-            print("Recording already in progress, ignoring start request")
-            return 
-        }
+        // Reset any existing recording state first
+        await resetRecordingState()
+        
+        // Now explicitly set isRecording to true
+        isRecording = true
         
         print("\n=== STARTING RECORDING ===\n")
         
@@ -139,6 +140,7 @@ class RecordingManager: ObservableObject {
         switch captureType {
         case .display:
             guard selectedScreen != nil else {
+                isRecording = false // Reset flag if we fail
                 print("ERROR: No display selected for display recording")
                 throw NSError(domain: "RecordingManager", code: 1001, userInfo: [NSLocalizedDescriptionKey: "No display selected. Please select a display to record."])
             }
@@ -146,6 +148,7 @@ class RecordingManager: ObservableObject {
             
         case .window:
             guard selectedWindow != nil else {
+                isRecording = false // Reset flag if we fail
                 print("ERROR: No window selected for window recording")
                 throw NSError(domain: "RecordingManager", code: 1002, userInfo: [NSLocalizedDescriptionKey: "No window selected. Please select a window to record."])
             }
@@ -153,11 +156,13 @@ class RecordingManager: ObservableObject {
             
         case .area:
             guard selectedScreen != nil else {
+                isRecording = false // Reset flag if we fail
                 print("ERROR: No display selected for area recording")
                 throw NSError(domain: "RecordingManager", code: 1003, userInfo: [NSLocalizedDescriptionKey: "No display selected for area recording. Please select a display first."])
             }
             
             guard recordingArea != nil else {
+                isRecording = false // Reset flag if we fail
                 print("ERROR: No area selected for area recording")
                 throw NSError(domain: "RecordingManager", code: 1004, userInfo: [NSLocalizedDescriptionKey: "No area selected. Please use the 'Select Area...' button to choose an area to record."])
             }
@@ -167,6 +172,7 @@ class RecordingManager: ObservableObject {
         
         // Check preferences and connectivity
         guard let preferences = preferencesManager else {
+            isRecording = false // Reset flag if we fail
             print("ERROR: PreferencesManager is not set")
             throw NSError(domain: "RecordingManager", code: 1005, userInfo: [NSLocalizedDescriptionKey: "Internal error: preferences not available."])
         }
@@ -895,6 +901,42 @@ class RecordingManager: ObservableObject {
     
     private func getPreferencesManager() -> PreferencesManager? {
         return preferencesManager
+    }
+    
+    @MainActor
+    func resetRecordingState() async {
+        print("Resetting recording state")
+        
+        // Reset recording flags
+        isRecording = false
+        isPaused = false
+        recordingDuration = 0
+        
+        // Invalidate timers
+        timer?.invalidate()
+        timer = nil
+        
+        // Reset writer objects
+        captureSession = nil
+        videoAssetWriter = nil
+        audioAssetWriter = nil
+        videoInput = nil
+        audioInput = nil
+        
+        // Reset URLs
+        videoOutputURL = nil
+        audioOutputURL = nil
+        mouseTrackingURL = nil
+        keyboardTrackingURL = nil
+        
+        // Reset counters
+        videoFramesProcessed = 0
+        audioSamplesProcessed = 0
+        
+        // Reset start time
+        startTime = nil
+        
+        print("Recording state reset complete")
     }
     
     private func teardownCaptureSession() async throws {
