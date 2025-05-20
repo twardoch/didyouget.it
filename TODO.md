@@ -1,4 +1,6 @@
 
+From TODO.md:
+
 STILL NOT FIXED ISSUES:
 
 - [ ] After clicking Record, the timer does not start running

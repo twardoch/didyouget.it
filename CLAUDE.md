@@ -21,8 +21,9 @@ I want a fast performant app `Did You Get It` (Mac identifier it.didyouget.mac, 
 
 As you work: 
 
+- Before you start working, analyze the recent git changes. 
 - Consult TODO.md for highest-priority issues and fix them. Update the file as you work.
 - Consult PROGRESS.md for additional issues and fix them. Update the file as you work.
 - Keep the CHANGELOG.md updated as you work.
-- After you make a change, perform `./run.sh debug` on macOS to build and run the app in debug mode, and observer the console output for any issues.
+- After you make a change, perform `./run.sh` on macOS to build and run the app in debug mode, and observer the console output for any issues.
 
