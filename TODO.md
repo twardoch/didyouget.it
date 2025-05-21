@@ -1,8 +1,9 @@
-CURRENT ISSUES: 
+CURRENT ISSUES:
 
-No video is created. Analyze the running log below. Analyze all codebase, think very hard and research how to fix the problem. Then incorporate the solution in the codebase. Review your fix, analyze it, find ways to improve it, and do improve. 
+- ~~No video is created. Analyze the running log below. Analyze all codebase, think very hard and research how to fix the problem. Then incorporate the solution in the codebase. Review your fix, analyze it, find ways to improve it, and do improve.~~
+- **Fixed:** Video files were missing because `SCStreamFrameOutput` was deallocated after `createStream` finished. `CaptureSessionManager` now keeps a strong reference to the output so frames are delivered and MOV files are written correctly.
 
-Also update CHANGELOG.md and PROJECT.md and TODO.md
+- Ensure CHANGELOG.md and PROGRESS.md remain updated after any change.
 
 ```
 Building Did You Get It app in debug mode...
