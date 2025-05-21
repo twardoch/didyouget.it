@@ -293,6 +293,7 @@
 - Resolved timer initialization that prevented the recording timer from starting
 - Implemented immediate UI state updates during stop recording process
 - Fixed critical issue with zero-length video files by implementing timestamp validation and buffer handling
+- Fixed missing video output caused by `SCStreamFrameOutput` being deallocated; `CaptureSessionManager` now retains the output reference
 - Added automatic cleanup of unfinished recording folders when setup fails
 - Created project specification (SPEC.md)
 - Initialized progress tracking (PROGRESS.md)

@@ -33,6 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Fixed state corruption issues that prevented restarting recording after stopping
   - Added multiple verification checks and logging throughout the state transition process
   - Improved object cleanup during recording stop to release system resources properly
+- Fixed missing video output: CaptureSessionManager now holds a strong reference to SCStreamFrameOutput so frames are delivered reliably
 - **Recording Lifecycle Refactor**: Overhauled the start/stop recording logic in `RecordingManager` and `ContentView` to improve robustness and resolve several critical issues:
     - Centralized stop sequence control within `RecordingManager.stopRecording()`.
     - Ensured the core cleanup function (`stopRecordingAsyncInternal`) always runs its full course if a recording was active, addressing issues with incomplete file finalization (empty JSON/MOV files).

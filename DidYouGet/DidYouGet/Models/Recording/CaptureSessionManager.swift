@@ -21,6 +21,7 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
     
     private var captureSession: SCStream?
     private var streamConfig: SCStreamConfiguration?
+    private var frameOutput: SCStreamFrameOutput?
     
     // The handler to process sample buffers
     private var sampleBufferHandler: ((CMSampleBuffer, RecordingManager.SCStreamType) -> Void)?
@@ -194,6 +195,7 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
         
         // Initialize our custom SCStreamFrameOutput class with the bridge handler.
         let customFrameOutput = SCStreamFrameOutput(handler: frameOutputHandlerForCustomClass)
+        self.frameOutput = customFrameOutput // keep strong reference
         
         // Define the queue on which ScreenCaptureKit will call methods on customFrameOutput (i.e., its SCStreamOutput delegate methods)
         let deliveryQueue = DispatchQueue(label: "com.didyougetit.scstream.deliveryqueue", qos: .userInitiated)
@@ -248,6 +250,7 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
         captureSession = nil
         streamConfig = nil
         sampleBufferHandler = nil
+        frameOutput = nil
     }
     
     func getStreamConfiguration() -> SCStreamConfiguration? {
