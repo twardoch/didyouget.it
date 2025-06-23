@@ -91,10 +91,15 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
                 throw NSError(domain: "CaptureSessionManager", code: 1002, userInfo: [NSLocalizedDescriptionKey: "No display selected"])
             }
             
-            // FORCED TEST RESOLUTION - MATCHING DUMMY CAPTURE
-            scConfig.width = 320 // Match dummy config
-            scConfig.height = 240 // Match dummy config
-            print("TEST: Capturing display \(display.displayID) at FORCED 320x240, 5FPS, QD=1, default fmt/scale/aspect")
+            // Use actual display resolution, similar to the working dummy capture
+            // SCDisplay.frame is in points, scaleFactor converts to pixels.
+            // SCStreamConfiguration width/height are in pixels.
+            let displayPixelWidth = Int(display.frame.width * display.scaleFactor)
+            let displayPixelHeight = Int(display.frame.height * display.scaleFactor)
+
+            scConfig.width = displayPixelWidth
+            scConfig.height = displayPixelHeight
+            print("CONFIG_CSM: Capturing display \(display.displayID) at \(displayPixelWidth)x\(displayPixelHeight) pixels, Target FPS: \(Int(scConfig.minimumFrameInterval.timescale) / Int(scConfig.minimumFrameInterval.value)), QueueDepth: \(scConfig.queueDepth)")
             
         case .window:
             guard let window = selectedWindow else {
@@ -328,6 +333,30 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
     
     // SCStreamDelegate methods
     // ... existing extension SCStreamDelegate ...
+
+    // MARK: - SCStreamDelegate
+
+    nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
+        // Ensure UI updates or state changes are on the main actor if needed
+        Task { @MainActor in
+            print("CRITICAL_ERROR_CSM_DELEGATE: Stream stopped with error: \(error.localizedDescription)")
+            // Potentially handle this error by resetting state or notifying the user
+            // For now, just logging is crucial.
+            // Consider calling a method on RecordingManager to signal this failure.
+        }
+    }
+
+    // Optional: Implement other SCStreamDelegate methods if needed for diagnostics
+    // nonisolated func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+    //     Task { @MainActor in
+    //         // This delegate method on CaptureSessionManager itself likely WON'T be called
+    //         // if SCStreamFrameOutput is successfully added via addStreamOutput and is receiving frames.
+    //         // ScreenCaptureKit usually sends to one or the other for a given type.
+    //         // If this DOES get called, it might indicate an issue with SCStreamFrameOutput registration.
+    //         print("UNEXPECTED_CSM_DELEGATE: stream(_:didOutputSampleBuffer:ofType:) called directly on CaptureSessionManager for type \(type). This might indicate an issue with SCStreamFrameOutput.")
+    //     }
+    // }
+
 }
 
 // Ensure the extension is recognized or move delegate methods into the class if necessary.

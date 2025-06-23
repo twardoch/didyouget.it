@@ -279,11 +279,15 @@ class RecordingManager: ObservableObject {
             )
             
             // Setup video writer
+            // Derive the actual frame rate from the streamConfig
+            let actualFrameRate = Int(streamConfig.minimumFrameInterval.timescale) / Int(streamConfig.minimumFrameInterval.value)
+            print("DEBUG_RM: Actual frame rate from streamConfig for VideoProcessor: \(actualFrameRate) FPS (timescale: \(streamConfig.minimumFrameInterval.timescale), value: \(streamConfig.minimumFrameInterval.value))")
+
             _ = try videoProcessor.setupVideoWriter(
                 url: paths.videoURL,
                 width: streamConfig.width,
                 height: streamConfig.height,
-                frameRate: preferences.frameRate,
+                frameRate: actualFrameRate, // Use actual configured frame rate
                 videoQuality: preferences.videoQuality
             )
             print("DEBUG: Returned from videoProcessor.setupVideoWriter successfully.")
