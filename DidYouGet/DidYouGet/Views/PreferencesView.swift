@@ -19,11 +19,11 @@ struct PreferencesView: View {
                 }
                 .tag(1)
             
-            InputTrackingSettingsView()
-                .tabItem {
-                    Label("Input Tracking", systemImage: "keyboard")
-                }
-                .tag(2)
+            // InputTrackingSettingsView() // Removed for MVP
+            //     .tabItem {
+            //         Label("Input Tracking", systemImage: "keyboard")
+            //     }
+            //     .tag(2)
             
             OutputSettingsView()
                 .tabItem {
@@ -118,51 +118,51 @@ struct AudioSettingsView: View {
     }
 }
 
-struct InputTrackingSettingsView: View {
-    @EnvironmentObject var preferencesManager: PreferencesManager
+// struct InputTrackingSettingsView: View { // Removed for MVP
+//     @EnvironmentObject var preferencesManager: PreferencesManager
     
-    var body: some View {
-        Form {
-            Section("Mouse Tracking") {
-                Toggle("Record Mouse Movements", isOn: $preferencesManager.recordMouseMovements)
+//     var body: some View {
+//         Form {
+//             Section("Mouse Tracking") {
+//                 Toggle("Record Mouse Movements", isOn: $preferencesManager.recordMouseMovements)
                 
-                if preferencesManager.recordMouseMovements {
-                    Text("Mouse movements and clicks will be saved in JSON format with tap/hold-release detection (200ms threshold)")
-                        .foregroundColor(.secondary)
-                        .font(.caption)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+//                 if preferencesManager.recordMouseMovements {
+//                     Text("Mouse movements and clicks will be saved in JSON format with tap/hold-release detection (200ms threshold)")
+//                         .foregroundColor(.secondary)
+//                         .font(.caption)
+//                         .fixedSize(horizontal: false, vertical: true)
+//                 }
+//             }
             
-            Section("Keyboard Tracking") {
-                Toggle("Record Keystrokes", isOn: $preferencesManager.recordKeystrokes)
+//             Section("Keyboard Tracking") {
+//                 Toggle("Record Keystrokes", isOn: $preferencesManager.recordKeystrokes)
                 
-                if preferencesManager.recordKeystrokes {
-                    Text("Keystrokes will be saved in JSON format with tap/hold-release detection (200ms threshold)")
-                        .foregroundColor(.secondary)
-                        .font(.caption)
-                        .fixedSize(horizontal: false, vertical: true)
+//                 if preferencesManager.recordKeystrokes {
+//                     Text("Keystrokes will be saved in JSON format with tap/hold-release detection (200ms threshold)")
+//                         .foregroundColor(.secondary)
+//                         .font(.caption)
+//                         .fixedSize(horizontal: false, vertical: true)
                     
-                    Text("Sensitive input (passwords) will be masked")
-                        .foregroundColor(.secondary)
-                        .font(.caption)
-                }
-            }
+//                     Text("Sensitive input (passwords) will be masked")
+//                         .foregroundColor(.secondary)
+//                         .font(.caption)
+//                 }
+//             }
             
-            // Permissions information
-            Section("Permissions Required") {
-                Text("Input tracking requires Accessibility permissions")
-                    .foregroundColor(.secondary)
-                    .font(.caption)
+//             // Permissions information
+//             Section("Permissions Required") {
+//                 Text("Input tracking requires Accessibility permissions")
+//                     .foregroundColor(.secondary)
+//                     .font(.caption)
                 
-                Button("Open System Settings") {
-                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-                }
-            }
-        }
-        .padding()
-    }
-}
+//                 Button("Open System Settings") {
+//                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+//                 }
+//             }
+//         }
+//         .padding()
+//     }
+// }
 
 struct OutputSettingsView: View {
     @EnvironmentObject var preferencesManager: PreferencesManager

@@ -34,23 +34,31 @@ class VideoProcessor {
     private var videoFrameLogCounter: Int = 0
     
     init() {
+        #if DEBUG
         print("VideoProcessor initialized")
+        #endif
     }
     
     func setupVideoWriter(url: URL, width: Int, height: Int, frameRate: Int, videoQuality: PreferencesManager.VideoQuality) throws -> AVAssetWriter {
+        #if DEBUG
         print("Creating video asset writer with output URL: \(url.path)")
+        #endif
         do {
             // First check if the file already exists and remove it to avoid conflicts
             if FileManager.default.fileExists(atPath: url.path) {
                 try FileManager.default.removeItem(at: url)
+                #if DEBUG
                 print("Removed existing video file at \(url.path)")
+                #endif
             }
             
             // Create an empty placeholder file to test permissions
             do {
                 let data = Data()
                 try data.write(to: url)
+                #if DEBUG
                 print("✓ Successfully created empty placeholder file at \(url.path)")
+                #endif
                 
                 // Remove the placeholder since AVAssetWriter will create the actual file
                 try FileManager.default.removeItem(at: url)
@@ -91,20 +99,26 @@ class VideoProcessor {
                 print("WARNING: Video asset writer has unexpected initial status: \(writer.status.rawValue)")
             }
             
+            #if DEBUG
             print("✓ Video asset writer created successfully, initial status: \(writer.status.rawValue)")
+            #endif
             
             // Verify the file was created by AVAssetWriter
             if FileManager.default.fileExists(atPath: url.path) {
+                #if DEBUG
                 let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
                 if let size = attributes[.size] as? UInt64 {
                     print("✓ AVAssetWriter created file on disk: \(url.path) (\(size) bytes)")
                 }
+                #endif
             } else {
                 print("WARNING: AVAssetWriter did not immediately create file on disk")
             }
             
             // Configure video input with settings
+            #if DEBUG
             print("Configuring video input settings")
+            #endif
             
             // Calculate bitrate based on quality setting
             let bitrate: Int
@@ -119,7 +133,9 @@ class VideoProcessor {
                 bitrate = 50_000_000 // 50 Mbps
             }
             
+            #if DEBUG
             print("Using video quality: \(videoQuality.rawValue) with bitrate: \(bitrate/1_000_000) Mbps")
+            #endif
             
             // Configure video settings with appropriate parameters
             // Add additional settings for more reliable encoding
@@ -138,28 +154,40 @@ class VideoProcessor {
             ]
             
             // Log detailed configuration for debugging
+            #if DEBUG
             print("VIDEO CONFIG: Width=\(width), Height=\(height), BitRate=\(bitrate/1_000_000)Mbps, FrameRate=\(frameRate)")
             
             print("DEBUG_VP: Attempting to create AVAssetWriterInput...")
+            #endif
             videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+            #if DEBUG
             print("DEBUG_VP: AVAssetWriterInput creation attempted (videoInput is \(videoInput == nil ? "nil" : "not nil")).")
+            #endif
             guard let videoInput = videoInput else {
                 throw NSError(domain: "VideoProcessor", code: 1005, userInfo: [NSLocalizedDescriptionKey: "Failed to create video input"])
             }
             
             videoInput.expectsMediaDataInRealTime = true
             
+            #if DEBUG
             print("DEBUG_VP: Checking if writer can add videoInput...")
+            #endif
             guard writer.canAdd(videoInput) else {
+                #if DEBUG
                 print("DEBUG_VP: Writer cannot add videoInput.")
+                #endif
                 throw NSError(domain: "VideoProcessor", code: 1006, userInfo: [NSLocalizedDescriptionKey: "Cannot add video input to asset writer"])
             }
+            #if DEBUG
             print("DEBUG_VP: Writer can add videoInput. Attempting to add...")
+            #endif
             
             writer.add(videoInput)
+            #if DEBUG
             print("DEBUG_VP: writer.add(videoInput) executed.")
             
             print("DEBUG_VP: Attempting to return from setupVideoWriter...")
+            #endif
             return writer
         } catch {
             print("CRITICAL ERROR: Failed to create video asset writer: \(error)")
@@ -173,13 +201,17 @@ class VideoProcessor {
             return false
         }
         
+        #if DEBUG
         print("Starting video asset writer...")
+        #endif
         if videoWriter.status != .unknown {
             print("WARNING: Video writer has unexpected status before starting: \(videoWriter.status.rawValue)")
         }
         
         let didStart = videoWriter.startWriting()
+        #if DEBUG
         print("VideoWriter.startWriting() returned \(didStart)")
+        #endif
         
         // Verify video writer started successfully
         if videoWriter.status != .writing {
@@ -192,7 +224,9 @@ class VideoProcessor {
                 return false
             }
         } else {
+            #if DEBUG
             print("✓ Video writer started successfully, status: \(videoWriter.status.rawValue)")
+            #endif
             return true
         }
     }
@@ -203,7 +237,9 @@ class VideoProcessor {
             return
         }
         
+        #if DEBUG
         print("Starting video writer session at time: \(time.seconds)...")
+        #endif
         videoWriter.startSession(atSourceTime: time)
         
         // Verify session started correctly
@@ -213,7 +249,9 @@ class VideoProcessor {
                 print("CRITICAL ERROR: Video writer error after starting session: \(error.localizedDescription)")
             }
         } else {
+            #if DEBUG
             print("✓ Video writer session started successfully")
+            #endif
             
             // Immediately force file creation to detect any permission/path issues early
             // This helps ensure the file is properly created on disk
@@ -222,9 +260,13 @@ class VideoProcessor {
                 if !fileManager.fileExists(atPath: videoWriter.outputURL.path) {
                     // Create an empty file to test permissions
                     try Data().write(to: videoWriter.outputURL)
+                    #if DEBUG
                     print("✓ Empty video file created for writer initialization")
+                    #endif
                 } else {
+                    #if DEBUG
                     print("✓ Video file already exists at path")
+                    #endif
                 }
             } catch {
                 print("CRITICAL ERROR: Unable to create file at path: \(videoWriter.outputURL.path)")
@@ -239,10 +281,12 @@ class VideoProcessor {
         videoFrameLogCounter += 1
         
         // Log more frequently for debugging
-        let shouldLogDetail = videoFrameLogCounter == 1 || videoFrameLogCounter % 100 == 0
+        let shouldLogDetail = videoFrameLogCounter == 1 || videoFrameLogCounter % 100 == 0 // Keep this for less frequent debug logs
         
         if shouldLogDetail {
+            #if DEBUG
             print("VIDEO FRAME: Processing frame #\(videoFrameLogCounter)")
+            #endif
         }
         
         // Before using a potentially less reliable buffer, validate it
@@ -253,6 +297,7 @@ class VideoProcessor {
         
         // Get additional buffer info for debugging
         if shouldLogDetail {
+            #if DEBUG
             let presentationTimeStamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
             let duration = CMSampleBufferGetDuration(sampleBuffer)
             print("VIDEO FRAME: PTS=\(presentationTimeStamp.seconds)s, Duration=\(duration.seconds)s")
@@ -261,6 +306,7 @@ class VideoProcessor {
                 let dimensions = CMVideoFormatDescriptionGetDimensions(formatDesc)
                 print("VIDEO FRAME: Dimensions=\(dimensions.width)x\(dimensions.height)")
             }
+            #endif
         }
         
         // Access these properties on the main actor
@@ -280,9 +326,13 @@ class VideoProcessor {
             
             // Try to start writing if it's in unknown state
             if writer.status == .unknown {
+                #if DEBUG
                 print("Attempting to start writer that was in unknown state")
+                #endif
                 if writer.startWriting() {
+                    #if DEBUG
                     print("Successfully started writer from unknown state")
+                    #endif
                     writer.startSession(atSourceTime: .zero)
                 } else {
                     print("ERROR: Failed to start writer from unknown state")
@@ -339,7 +389,9 @@ class VideoProcessor {
             if let fileHandle = FileHandle(forWritingAtPath: writer.outputURL.path) {
                 fileHandle.synchronizeFile()
                 fileHandle.closeFile()
+                #if DEBUG
                 print("DEBUG: Synchronized file to disk at frame \(videoFramesProcessed)")
+                #endif
             }
         }
         
@@ -364,9 +416,13 @@ class VideoProcessor {
             
             // Try to create a fallback frame if this is our first frame (critical for file initialization)
             if videoFramesProcessed == 0 {
+                #if DEBUG
                 print("RECOVERY: Attempting to create fallback frame for first frame")
+                #endif
                 if createAndAppendFallbackFrame() {
+                    #if DEBUG
                     print("✓ RECOVERY: Successfully created fallback first frame")
+                    #endif
                     videoFramesProcessed += 1
                     return true
                 } else {
@@ -380,14 +436,18 @@ class VideoProcessor {
             videoFramesProcessed += 1
             
             if videoFramesProcessed == 1 {
+                #if DEBUG
                 print("✓ VIDEO SUCCESS: First frame processed successfully!")
+                #endif
                 
                 // Immediate file size check after first frame
                 do {
                     let fileManager = FileManager.default
                     let attributes = try fileManager.attributesOfItem(atPath: writer.outputURL.path)
                     if let fileSize = attributes[.size] as? UInt64 {
+                        #if DEBUG
                         print("✓ VIDEO FILE: Size after first frame = \(fileSize) bytes")
+                        #endif
                     }
                     
                     // Create a backup file marker to confirm we've started writing frames
@@ -399,15 +459,19 @@ class VideoProcessor {
             }
             
             // Log successful append more frequently during development
-            if videoFramesProcessed % 30 == 0 {
+            if videoFramesProcessed % 30 == 0 { // Keep this frequency for important progress logs
+                #if DEBUG
                 print("✓ VIDEO SUCCESS: Processed \(videoFramesProcessed) video frames successfully")
+                #endif
                 
                 // Periodically check file size
                 do {
                     let fileManager = FileManager.default
                     let attributes = try fileManager.attributesOfItem(atPath: writer.outputURL.path)
                     if let fileSize = attributes[.size] as? UInt64 {
+                        #if DEBUG
                         print("✓ VIDEO FILE: Current size = \(fileSize) bytes")
+                        #endif
                     }
                 } catch {
                     print("WARNING: Unable to check video file size: \(error.localizedDescription)")
@@ -531,8 +595,10 @@ class VideoProcessor {
         let currentTime = CMClockGetTime(CMClockGetHostTimeClock())
         let adjustedPTS = self.videoFramesProcessed == 0 ? CMTime.zero : currentTime
         
+        #if DEBUG
         // Log the adjustment we're making
         print("TIMESTAMP ADJUST: Original=\(originalPTS.seconds)s, Adjusted=\(adjustedPTS.seconds)s")
+        #endif
         
         // Create timing info array with the adjusted time
         var timingInfo = CMSampleTimingInfo()
@@ -564,7 +630,9 @@ class VideoProcessor {
             return (false, NSError(domain: "VideoProcessor", code: 1040, userInfo: [NSLocalizedDescriptionKey: "Video asset writer is nil"]))
         }
         
+        #if DEBUG
         print("Finalizing video file...")
+        #endif
             
         // Check file size BEFORE finalization
         let fileManager = FileManager.default
@@ -574,18 +642,23 @@ class VideoProcessor {
             do {
                 let attrs = try fileManager.attributesOfItem(atPath: outputURL.path)
                 if let fileSize = attrs[FileAttributeKey.size] as? UInt64 {
+                    #if DEBUG
                     print("PRE-FINALIZE VIDEO FILE SIZE: \(fileSize) bytes")
+                    #endif
                     
                     if fileSize == 0 {
                         print("CRITICAL WARNING: Video file is empty (0 bytes) before finalization!")
-                        
+                        #if DEBUG
                         // Try to dump detailed writer state for debugging
                         print("WRITER STATE DUMP:")
                         print("  - Status: \(writer.status.rawValue)")
                         print("  - Error: \(writer.error?.localizedDescription ?? "nil")")
                         print("  - Video frames processed: \(self.videoFramesProcessed)")
+                        #endif
                     } else {
+                        #if DEBUG
                         print("GOOD NEWS: Video file has content before finalization!")
+                        #endif
                     }
                 }
             } catch {
@@ -595,7 +668,9 @@ class VideoProcessor {
             print("WARNING: Video file does not exist at path: \(outputURL.path)")
         }
         
+        #if DEBUG
         print("Marking video input as finished")
+        #endif
         videoInput?.markAsFinished()
         
         // Add a brief delay to ensure processing completes
@@ -611,14 +686,18 @@ class VideoProcessor {
             print("ERROR: Video asset writer failed: \(String(describing: writer.error))")
             return (false, error)
         } else if writer.status == AVAssetWriter.Status.completed {
+            #if DEBUG
             print("Video successfully finalized")
+            #endif
             
             // Check file size AFTER finalization
             if fileManager.fileExists(atPath: outputURL.path) {
                 do {
                     let attrs = try fileManager.attributesOfItem(atPath: outputURL.path)
                     if let fileSize = attrs[FileAttributeKey.size] as? UInt64 {
+                        #if DEBUG
                         print("POST-FINALIZE VIDEO FILE SIZE: \(fileSize) bytes")
+                        #endif
                         if fileSize == 0 {
                             try? fileManager.removeItem(at: outputURL)
                             print("Removed zero-length video file at \(outputURL.path)")

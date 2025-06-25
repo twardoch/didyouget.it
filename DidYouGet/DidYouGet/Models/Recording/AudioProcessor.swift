@@ -15,16 +15,22 @@ class AudioProcessor {
     private var audioSampleLogCounter: Int = 0
     
     init() {
+        #if DEBUG
         print("AudioProcessor initialized")
+        #endif
     }
     
     func setupAudioWriter(url: URL) throws -> AVAssetWriter? {
+        #if DEBUG
         print("Creating separate audio asset writer with output URL: \(url.path)")
+        #endif
         
         // Check if the file already exists and remove it to avoid conflicts
         if FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
+            #if DEBUG
             print("Removed existing audio file at \(url.path)")
+            #endif
         }
         
         do {
@@ -54,7 +60,9 @@ class AudioProcessor {
             }
             
             writer.add(audioInput)
+            #if DEBUG
             print("Audio asset writer created successfully")
+            #endif
             
             return writer
         } catch {
@@ -87,18 +95,25 @@ class AudioProcessor {
         }
         
         videoWriter.add(audioInput)
+        #if DEBUG
         print("Audio input added to video writer successfully")
+        #endif
         
         return audioInput
     }
     
     func startWriting() -> Bool {
         guard let audioWriter = audioAssetWriter else {
-            print("WARNING: No separate audio asset writer to start")
+            // This is a normal scenario if audio is mixed, so not a warning unless in debug.
+            #if DEBUG
+            print("DEBUG: No separate audio asset writer to start (likely mixed with video or audio disabled).")
+            #endif
             return false
         }
         
+        #if DEBUG
         print("Starting audio asset writer...")
+        #endif
         if audioWriter.status != .unknown {
             print("WARNING: Audio writer has unexpected status before starting: \(audioWriter.status.rawValue)")
         }
@@ -114,18 +129,24 @@ class AudioProcessor {
             } 
             return false
         } else {
+            #if DEBUG
             print("✓ Audio writer started successfully, status: \(audioWriter.status.rawValue)")
+            #endif
             return true
         }
     }
     
     func startSession(at time: CMTime) {
         guard let audioWriter = audioAssetWriter else {
-            print("WARNING: No separate audio asset writer for session")
+             #if DEBUG
+            print("DEBUG: No separate audio asset writer for session (likely mixed with video or audio disabled).")
+            #endif
             return
         }
         
+        #if DEBUG
         print("Starting audio writer session at time: \(time.seconds)...")
+        #endif
         audioWriter.startSession(atSourceTime: time)
         
         // Verify audio session started correctly
@@ -135,7 +156,9 @@ class AudioProcessor {
                 print("WARNING: Audio writer error after starting session: \(error.localizedDescription)")
             }
         } else {
+            #if DEBUG
             print("✓ Audio writer session started successfully")
+            #endif
         }
     }
     
@@ -145,10 +168,12 @@ class AudioProcessor {
         audioSampleLogCounter += 1
         
         // Log only the first sample and then occasionally to avoid flooding console
-        let shouldLogDetail = audioSampleLogCounter == 1 || audioSampleLogCounter % 300 == 0
+        let shouldLogDetail = audioSampleLogCounter == 1 || audioSampleLogCounter % 300 == 0 // Keep this frequency
         
         if shouldLogDetail {
+            #if DEBUG
             print("AUDIO SAMPLE: Processing sample #\(audioSampleLogCounter)")
+            #endif
         }
         
         // Validate the sample buffer
@@ -159,6 +184,7 @@ class AudioProcessor {
         
         // Get additional buffer info for debugging
         if shouldLogDetail {
+            #if DEBUG
             let presentationTimeStamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
             let duration = CMSampleBufferGetDuration(sampleBuffer)
             print("AUDIO SAMPLE: PTS=\(presentationTimeStamp.seconds)s, Duration=\(duration.seconds)s")
@@ -168,6 +194,7 @@ class AudioProcessor {
                     print("AUDIO SAMPLE: Sample Rate=\(audioStreamBasicDescription.pointee.mSampleRate)Hz, Channels=\(audioStreamBasicDescription.pointee.mChannelsPerFrame)")
                 }
             }
+            #endif
         }
         
         // Access properties directly on the main actor
@@ -219,7 +246,8 @@ class AudioProcessor {
         if success {
             // Track processed samples for diagnostics
             audioSamplesProcessed += 1
-            if audioSamplesProcessed % 100 == 0 {
+            if audioSamplesProcessed % 100 == 0 { // Keep this frequency for important progress logs
+                #if DEBUG
                 print("✓ AUDIO SUCCESS: Processed \(audioSamplesProcessed) audio samples")
                 
                 if isMixingWithVideo {
@@ -240,6 +268,7 @@ class AudioProcessor {
                         }
                     }
                 }
+                #endif
             }
         }
         
@@ -248,13 +277,17 @@ class AudioProcessor {
     
     func finishWriting() async -> (Bool, Error?) {
         guard let audioWriter = audioAssetWriter else {
-            print("INFO: No separate audio writer to finalize")
+            #if DEBUG
+            print("INFO: No separate audio writer to finalize (likely mixed or audio disabled).")
+            #endif
             return (true, nil)
         }
         
+        #if DEBUG
         print("Finalizing audio file...")
         
         print("Marking audio input as finished")
+        #endif
         audioInput?.markAsFinished()
         
         // Add a brief delay to ensure processing completes
@@ -267,7 +300,9 @@ class AudioProcessor {
             print("ERROR: Audio asset writer failed: \(String(describing: error))")
             return (false, error)
         } else if audioWriter.status == .completed {
+            #if DEBUG
             print("Audio successfully finalized")
+            #endif
             return (true, nil)
         } else {
             print("WARNING: Unexpected audio writer status: \(audioWriter.status.rawValue)")

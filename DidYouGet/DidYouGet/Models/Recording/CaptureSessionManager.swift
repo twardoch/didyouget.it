@@ -27,7 +27,9 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
     private var sampleBufferHandler: ((CMSampleBuffer, RecordingManager.SCStreamType) -> Void)?
     
     override init() {
+        #if DEBUG
         print("CaptureSessionManager initialized")
+        #endif
         super.init()
     }
     
@@ -39,7 +41,9 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
         frameRate: Int,
         recordAudio: Bool
     ) throws -> SCStreamConfiguration {
+        #if DEBUG
         print("Configuring stream settings...")
+        #endif
         let scConfig = SCStreamConfiguration()
         self.streamConfig = scConfig // Store for later use
         
@@ -53,7 +57,10 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
         // Set frame rate based on preferences - Using dummy_config value
         // print("Setting frame rate to \(frameRate) FPS")
         // scConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(frameRate))
-        scConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(5)) // Match dummy config (5 FPS)
+        scConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(frameRate)) // Use actual frameRate
+        #if DEBUG
+        print("Using frame rate: \(frameRate) FPS (derived from minimumFrameInterval: \(scConfig.minimumFrameInterval.seconds))")
+        // The following "TEST:" prints are kept for now as they indicate areas to be fixed (dynamic config)
         print("TEST: Setting frame rate to 5 FPS")
 
         // Configure pixel format (BGRA is standard for macOS screen capture) - Using dummy_config default
@@ -71,19 +78,26 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
         //     print("Aspect ratio preservation not available (requires macOS 14+)")
         // }
         print("TEST: Using default preservesAspectRatio")
+        #endif
         
         // Configure audio capture if needed
         if recordAudio {
+            #if DEBUG
             print("Configuring audio capture...")
+            #endif
             scConfig.capturesAudio = true
             
             // Configure audio settings - exclude app's own audio
             scConfig.excludesCurrentProcessAudio = true
+            #if DEBUG
             print("Audio capture enabled, excluding current process audio")
+            #endif
         }
         
+        #if DEBUG
         // Get the display or window to capture
         print("Setting up content filter based on capture type: \(captureType)")
+        #endif
         switch captureType {
         case .display:
             guard let display = selectedScreen else {
@@ -99,40 +113,51 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
 
             scConfig.width = displayPixelWidth
             scConfig.height = displayPixelHeight
+            #if DEBUG
             print("CONFIG_CSM: Capturing display \(display.displayID) at \(displayPixelWidth)x\(displayPixelHeight) pixels, Target FPS: \(Int(scConfig.minimumFrameInterval.timescale) / Int(scConfig.minimumFrameInterval.value)), QueueDepth: \(scConfig.queueDepth)")
+            #endif
             
         case .window:
-            guard let window = selectedWindow else {
-                print("ERROR: No window selected for window capture")
-                throw NSError(domain: "CaptureSessionManager", code: 1003, userInfo: [NSLocalizedDescriptionKey: "No window selected"])
+            guard let window = selectedWindow, let owningDisplay = window.display else {
+                print("ERROR: No window or owning display selected for window capture")
+                throw NSError(domain: "CaptureSessionManager", code: 1003, userInfo: [NSLocalizedDescriptionKey: "No window or owning display selected"])
             }
             
-            let windowWidth = Int(window.frame.width)
-            let windowHeight = Int(window.frame.height)
-            let scale = 2 // Retina scale factor
+            let windowFrame = window.frame // This is in points
+            let scale = owningDisplay.scaleFactor // Use display's scale factor
             
-            scConfig.width = windowWidth * scale
-            scConfig.height = windowHeight * scale
-            print("Capturing window '\(window.title ?? "Untitled")' at \(windowWidth * scale) x \(windowHeight * scale) (with Retina scaling)")
+            scConfig.width = Int(windowFrame.width * scale)
+            scConfig.height = Int(windowFrame.height * scale)
+            #if DEBUG
+            print("Capturing window '\(window.title ?? "Untitled")' at \(scConfig.width)x\(scConfig.height) (with scale \(scale))")
+            #endif
             
         case .area:
-            guard let _ = selectedScreen, let area = recordingArea else {
+            guard let displayForArea = selectedScreen, let area = recordingArea else {
                 print("ERROR: No display or area selected for area capture")
                 throw NSError(domain: "CaptureSessionManager", code: 1004, userInfo: [NSLocalizedDescriptionKey: "No display or area selected"])
             }
             
-            let areaWidth = Int(area.width)
-            let areaHeight = Int(area.height)
-            let scale = 2 // Retina scale factor
+            let scale = displayForArea.scaleFactor // Use display's scale factor
             
             // IMPORTANT: The streamConfig dimensions MUST match the area for proper recording
-            scConfig.width = areaWidth * scale
-            scConfig.height = areaHeight * scale
-            print("Capturing area at \(areaWidth * scale) x \(areaHeight * scale) (with Retina scaling)")
+            // The 'area' CGRect should already be in screen points.
+            scConfig.width = Int(area.width * scale)
+            scConfig.height = Int(area.height * scale)
+            // For area capture, we might also want to set sourceRect if supported and beneficial
+            // scConfig.sourceRect = CGRect(x: area.origin.x * scale, y: area.origin.y * scale, width: area.width * scale, height: area.height * scale)
+
+            #if DEBUG
+            print("Capturing area at \(scConfig.width)x\(scConfig.height) (with scale \(scale)) from origin (\(area.origin.x*scale), \(area.origin.y*scale))")
+            #endif
             
             // For area selection we need a specific content filter
-            let rect = CGRect(x: area.origin.x, y: area.origin.y, width: area.width, height: area.height)
-            print("Area coordinates: (\(Int(rect.origin.x)), \(Int(rect.origin.y))) with size \(Int(rect.width))×\(Int(rect.height))")
+            // If using sourceRect, the filter is still for the whole display.
+            // If not using sourceRect, the filter is for the whole display, and VideoProcessor would crop.
+            // The current setup implies the latter.
+            #if DEBUG
+            print("Area coordinates (points): (\(Int(area.origin.x)), \(Int(area.origin.y))) with size \(Int(area.width))×\(Int(area.height))")
+            #endif
         }
         
         return scConfig
@@ -183,7 +208,9 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
         // Instead, we create a new closure that calls our internal handleStreamOutput,
         // and that internal handleStreamOutput will then call the stored sampleBufferHandler.
 
+        #if DEBUG
         print("Creating SCStream with configured filter and settings")
+        #endif
         captureSession = SCStream(filter: filter, configuration: config, delegate: self) // Reverted delegate to self
         
         guard let stream = captureSession else {
@@ -194,7 +221,9 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
         // It then calls our internal bridge method handleStreamOutput.
         let frameOutputHandlerForCustomClass = { [weak self] (sampleBuffer: CMSampleBuffer, mappedType: RecordingManager.SCStreamType) -> Void in
             // This print confirms our custom class's handler mechanism is working.
+            #if DEBUG
             print("DEBUG_CSM: Bridge handler in createStream called by SCStreamFrameOutput. Type: \(mappedType)")
+            #endif
             self?.handleStreamOutput(sampleBuffer, mappedType: mappedType)
         }
         
@@ -207,13 +236,19 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
         
         // Add our customFrameOutput instance as the output for screen data.
         try stream.addStreamOutput(customFrameOutput, type: .screen, sampleHandlerQueue: deliveryQueue)
+        #if DEBUG
         print("Screen capture output added successfully (using custom SCStreamFrameOutput)")
+        #endif
         
         // Add audio output if needed
         if config.capturesAudio {
+            #if DEBUG
             print("Configuring audio stream output (using custom SCStreamFrameOutput)...")
+            #endif
             try stream.addStreamOutput(customFrameOutput, type: .audio, sampleHandlerQueue: deliveryQueue) 
+            #if DEBUG
             print("Audio capture output added successfully (using custom SCStreamFrameOutput)")
+            #endif
         }
     }
     
@@ -224,14 +259,20 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
         }
         
         // Start stream capture with better error handling
+        #if DEBUG
         print("Starting SCStream capture...")
+        #endif
         do {
             try await stream.startCapture()
+            #if DEBUG
             print("SCStream capture started successfully")
+            #endif
         } catch {
             print("CRITICAL ERROR: Failed to start SCStream capture: \(error)")
             // Clean up resources in case of failure
+            #if DEBUG
             print("Attempting to clean up stream resources")
+            #endif
             try? await stream.stopCapture()
             throw error
         }
@@ -240,12 +281,18 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
     func stopCapture() async {
         if let stream = captureSession {
             do {
+                #if DEBUG
                 print("Stopping SCStream capture...")
+                #endif
                 try await stream.stopCapture()
+                #if DEBUG
                 print("Stream capture stopped successfully")
+                #endif
             } catch {
                 print("ERROR: Error stopping capture stream: \(error)")
+                #if DEBUG
                 print("Continuing with teardown despite stream stop error")
+                #endif
             }
         } else {
             print("WARNING: No capture session to stop")
@@ -264,14 +311,16 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
     
     // Helper function to initialize the capture system before actual recording
     func addDummyCapture() async throws {
+        #if DEBUG
         print("Initializing capture system with warmup frame...")
+        #endif
         
         // Create a small dummy display content
         let dummyContent = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         
         // Only proceed if we have displays
         guard let firstDisplay = dummyContent.displays.first else {
-            print("No displays found for dummy capture")
+            print("No displays found for dummy capture") // This is an important warning
             return
         }
         
@@ -280,9 +329,11 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
         
         // Create a minimal configuration
         let dummyConfig = SCStreamConfiguration()
-        dummyConfig.width = Int(firstDisplay.frame.width) * 2
-        dummyConfig.height = Int(firstDisplay.frame.height) * 2
+        dummyConfig.width = Int(firstDisplay.frame.width * firstDisplay.scaleFactor) // Use scale factor
+        dummyConfig.height = Int(firstDisplay.frame.height * firstDisplay.scaleFactor) // Use scale factor
+        #if DEBUG
         print("DEBUG_DUMMY: Using dummyConfig resolution \(dummyConfig.width)x\(dummyConfig.height)")
+        #endif
 
         dummyConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(5))
         dummyConfig.queueDepth = 1
@@ -294,7 +345,9 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
             func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
                 if type == .screen && !receivedFrame {
                     receivedFrame = true
+                    #if DEBUG
                     print("✓ Received dummy initialization frame")
+                    #endif
                 }
             }
         }
@@ -317,17 +370,21 @@ class CaptureSessionManager: NSObject, SCStreamDelegate {
         // Stop the dummy capture
         try await dummyStream.stopCapture()
         
+        #if DEBUG
         print("Dummy capture completed successfully")
+        #endif
     }
     
     // This internal method is called by the closure provided to SCStreamFrameOutput
     private func handleStreamOutput(_ sampleBuffer: CMSampleBuffer, mappedType: RecordingManager.SCStreamType) {
         guard let finalHandler = sampleBufferHandler else { 
-            print("ERROR_CSM: sampleBufferHandler (RecordingManager.handleSampleBuffer) is nil in handleStreamOutput")
+            print("ERROR_CSM: sampleBufferHandler (RecordingManager.handleSampleBuffer) is nil in handleStreamOutput") // Critical error
             return 
         }
         // Call the original handler (RecordingManager.handleSampleBuffer)
+        #if DEBUG
         print("DEBUG_CSM: handleStreamOutput forwarding to RecordingManager. Type: \(mappedType)")
+        #endif
         finalHandler(sampleBuffer, mappedType)
     }
     

@@ -247,55 +247,55 @@ struct ContentView: View {
                     
                     Divider()
                     
-                    // Mouse recording toggle
-                    HStack {
-                        Toggle(isOn: $preferencesManager.recordMouseMovements) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "cursorarrow.motionlines")
-                                    .foregroundColor(preferencesManager.recordMouseMovements ? .green : .secondary)
-                                    .font(.system(size: 14))
-                                    .frame(width: 16)
+                    // Mouse recording toggle - Removed for MVP
+                    // HStack {
+                    //     Toggle(isOn: $preferencesManager.recordMouseMovements) {
+                    //         HStack(spacing: 8) {
+                    //             Image(systemName: "cursorarrow.motionlines")
+                    //                 .foregroundColor(preferencesManager.recordMouseMovements ? .green : .secondary)
+                    //                 .font(.system(size: 14))
+                    //                 .frame(width: 16)
                                 
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Mouse")
-                                        .font(.subheadline)
+                    //             VStack(alignment: .leading, spacing: 2) {
+                    //                 Text("Mouse")
+                    //                     .font(.subheadline)
                                         
-                                    if preferencesManager.recordMouseMovements {
-                                        Text("JSON format with click/hold detection")
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                        .toggleStyle(SwitchToggleStyle(tint: .green))
-                    }
+                    //                 if preferencesManager.recordMouseMovements {
+                    //                     Text("JSON format with click/hold detection")
+                    //                         .font(.caption2)
+                    //                         .foregroundColor(.secondary)
+                    //                 }
+                    //             }
+                    //         }
+                    //     }
+                    //     .toggleStyle(SwitchToggleStyle(tint: .green))
+                    // }
                     
-                    Divider()
+                    // Divider() // Removed for MVP
                     
-                    // Keyboard recording toggle
-                    HStack {
-                        Toggle(isOn: $preferencesManager.recordKeystrokes) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "keyboard")
-                                    .foregroundColor(preferencesManager.recordKeystrokes ? .purple : .secondary)
-                                    .font(.system(size: 14))
-                                    .frame(width: 16)
+                    // Keyboard recording toggle - Removed for MVP
+                    // HStack {
+                    //     Toggle(isOn: $preferencesManager.recordKeystrokes) {
+                    //         HStack(spacing: 8) {
+                    //             Image(systemName: "keyboard")
+                    //                 .foregroundColor(preferencesManager.recordKeystrokes ? .purple : .secondary)
+                    //                 .font(.system(size: 14))
+                    //                 .frame(width: 16)
                                 
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Keyboard")
-                                        .font(.subheadline)
+                    //             VStack(alignment: .leading, spacing: 2) {
+                    //                 Text("Keyboard")
+                    //                     .font(.subheadline)
                                         
-                                    if preferencesManager.recordKeystrokes {
-                                        Text("JSON format with tap/hold detection")
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                        .toggleStyle(SwitchToggleStyle(tint: .purple))
-                    }
+                    //                 if preferencesManager.recordKeystrokes {
+                    //                     Text("JSON format with tap/hold detection")
+                    //                         .font(.caption2)
+                    //                         .foregroundColor(.secondary)
+                    //                 }
+                    //             }
+                    //         }
+                    //     }
+                    //     .toggleStyle(SwitchToggleStyle(tint: .purple))
+                    // }
                 }
                 .padding(.horizontal, 8)
             }
