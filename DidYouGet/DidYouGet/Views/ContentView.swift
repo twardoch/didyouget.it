@@ -361,6 +361,40 @@ struct ContentView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
+            
+            // Version information footer
+            Divider()
+            HStack {
+                Text(VersionManager.shared.currentVersion)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                if !VersionManager.shared.isReleaseVersion {
+                    Text("dev")
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color.orange.opacity(0.2))
+                        .cornerRadius(3)
+                }
+                Spacer()
+                Button(action: {
+                    // Show full version info
+                    let alert = NSAlert()
+                    alert.messageText = "Did You Get It"
+                    alert.informativeText = VersionManager.shared.fullVersionString
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
+                }) {
+                    Image(systemName: "info.circle")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .help("Show version information")
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
         }
         .frame(width: 380)
         .padding(.vertical, 16)

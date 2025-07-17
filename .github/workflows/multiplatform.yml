@@ -1,0 +1,188 @@
+name: Multiplatform Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build'
+        required: true
+        default: '1.0.0'
+
+jobs:
+  build-universal:
+    runs-on: macos-latest
+    
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Setup Swift
+      uses: swift-actions/setup-swift@v1
+      with:
+        swift-version: '5.9'
+    
+    - name: Get version
+      id: get_version
+      run: |
+        if [ "${{ github.event_name }}" = "push" ]; then
+          VERSION=${GITHUB_REF#refs/tags/v}
+        else
+          VERSION=${{ github.event.inputs.version }}
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+    
+    - name: Cache Swift packages
+      uses: actions/cache@v3
+      with:
+        path: .build
+        key: ${{ runner.os }}-${{ matrix.arch }}-swift-${{ hashFiles('**/Package.resolved') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ matrix.arch }}-swift-
+    
+    - name: Build for ${{ matrix.arch }}
+      run: |
+        chmod +x build.sh
+        if [ "${{ matrix.arch }}" = "arm64" ]; then
+          swift build -c release --arch arm64
+        else
+          swift build -c release --arch x86_64
+        fi
+    
+    - name: Create architecture-specific release
+      run: |
+        mkdir -p release/${{ matrix.arch }}
+        if [ "${{ matrix.arch }}" = "arm64" ]; then
+          cp .build/arm64-apple-macosx/release/DidYouGet release/${{ matrix.arch }}/
+        else
+          cp .build/x86_64-apple-macosx/release/DidYouGet release/${{ matrix.arch }}/
+        fi
+        
+        # Create version info
+        cat > release/${{ matrix.arch }}/version.txt << EOF
+        DidYouGet ${{ steps.get_version.outputs.version }}
+        Architecture: ${{ matrix.arch }}
+        Built: $(date)
+        Platform: macOS
+        EOF
+    
+    - name: Upload architecture artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: didyouget-${{ matrix.arch }}
+        path: release/${{ matrix.arch }}/
+        retention-days: 7
+
+  create-universal-binary:
+    needs: build-universal
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Get version
+      id: get_version
+      run: |
+        if [ "${{ github.event_name }}" = "push" ]; then
+          VERSION=${GITHUB_REF#refs/tags/v}
+          TAG=${GITHUB_REF#refs/tags/}
+        else
+          VERSION=${{ github.event.inputs.version }}
+          TAG=v$VERSION
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+    
+    - name: Download x86_64 artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: didyouget-x86_64
+        path: release/x86_64/
+    
+    - name: Download arm64 artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: didyouget-arm64
+        path: release/arm64/
+    
+    - name: Create universal binary
+      run: |
+        mkdir -p release/universal
+        
+        # Create universal binary using lipo
+        lipo -create \
+          release/x86_64/DidYouGet \
+          release/arm64/DidYouGet \
+          -output release/universal/DidYouGet
+        
+        # Make it executable
+        chmod +x release/universal/DidYouGet
+        
+        # Create version info
+        cat > release/universal/version.txt << EOF
+        DidYouGet ${{ steps.get_version.outputs.version }}
+        Architecture: Universal (x86_64 + arm64)
+        Built: $(date)
+        Platform: macOS
+        EOF
+        
+        # Verify the universal binary
+        file release/universal/DidYouGet
+        lipo -info release/universal/DidYouGet
+    
+    - name: Create release packages
+      run: |
+        cd release
+        
+        # Create individual architecture packages
+        tar -czf DidYouGet-${{ steps.get_version.outputs.version }}-macos-x86_64.tar.gz -C x86_64 DidYouGet version.txt
+        tar -czf DidYouGet-${{ steps.get_version.outputs.version }}-macos-arm64.tar.gz -C arm64 DidYouGet version.txt
+        tar -czf DidYouGet-${{ steps.get_version.outputs.version }}-macos-universal.tar.gz -C universal DidYouGet version.txt
+    
+    - name: Create GitHub Release (if tag push)
+      if: github.event_name == 'push'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.get_version.outputs.tag }}
+        name: Release ${{ steps.get_version.outputs.version }}
+        body: |
+          # Release ${{ steps.get_version.outputs.version }}
+          
+          ## Downloads
+          - **Universal Binary** (recommended): `DidYouGet-${{ steps.get_version.outputs.version }}-macos-universal.tar.gz`
+          - **Intel Macs**: `DidYouGet-${{ steps.get_version.outputs.version }}-macos-x86_64.tar.gz`
+          - **Apple Silicon Macs**: `DidYouGet-${{ steps.get_version.outputs.version }}-macos-arm64.tar.gz`
+          
+          ## Installation
+          1. Download the appropriate file for your Mac
+          2. Extract: `tar -xzf DidYouGet-${{ steps.get_version.outputs.version }}-macos-*.tar.gz`
+          3. Run: `./DidYouGet`
+          
+          ## Requirements
+          - macOS 13.0 or later
+          - Screen recording permissions may be required
+        files: |
+          release/DidYouGet-${{ steps.get_version.outputs.version }}-macos-universal.tar.gz
+          release/DidYouGet-${{ steps.get_version.outputs.version }}-macos-x86_64.tar.gz
+          release/DidYouGet-${{ steps.get_version.outputs.version }}-macos-arm64.tar.gz
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Upload multiplatform artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: multiplatform-release
+        path: |
+          release/DidYouGet-${{ steps.get_version.outputs.version }}-macos-*.tar.gz
+        retention-days: 90

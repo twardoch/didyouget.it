@@ -27,5 +27,10 @@ let package = Package(
                 .process("Resources")
             ]
         ),
+        .testTarget(
+            name: "DidYouGetTests",
+            dependencies: ["DidYouGet"],
+            path: "Tests"
+        ),
     ]
 )
