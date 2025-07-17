@@ -58,6 +58,8 @@ Successfully implemented a complete git-tag-based semversioning system, comprehe
 
 ### 4. GitHub Actions CI/CD Pipeline
 
+**Note**: GitHub Actions workflows are provided in `GITHUB_ACTIONS_WORKFLOWS.md` due to permission restrictions.
+
 - **ci.yml** - Continuous Integration
   - Triggers on push/PR to main branches
   - Runs tests and linting
@@ -125,15 +127,12 @@ Successfully implemented a complete git-tag-based semversioning system, comprehe
 │   ├── PreferencesManagerTests.swift
 │   ├── RecordingManagerTests.swift
 │   └── AudioManagerTests.swift
-├── .github/workflows/
-│   ├── ci.yml
-│   ├── release.yml
-│   └── multiplatform.yml
 ├── .swiftlint.yml
 ├── build.sh
 ├── test-and-release.sh
 ├── install.sh
 ├── BUILD.md
+├── GITHUB_ACTIONS_WORKFLOWS.md
 └── IMPLEMENTATION_SUMMARY.md
 ```
 
