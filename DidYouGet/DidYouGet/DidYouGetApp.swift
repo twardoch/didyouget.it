@@ -10,7 +10,8 @@ struct DidYouGetApp: App {
     init() {
         // Debug output
         print("=== APPLICATION INITIALIZATION ===")
-        print("Application starting up. macOS Version: \(ProcessInfo.processInfo.operatingSystemVersionString)")
+        print("Application: \(VersionManager.shared.fullVersionString)")
+        print("macOS Version: \(ProcessInfo.processInfo.operatingSystemVersionString)")
         
         // Connect the managers (essential for recording)
         recordingManager.setPreferencesManager(preferencesManager)
