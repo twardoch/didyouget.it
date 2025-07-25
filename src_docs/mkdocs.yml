@@ -1,0 +1,89 @@
+site_name: Did You Get It
+site_description: Fast performant macOS screen recording app
+site_url: https://didyouget.it
+repo_url: https://github.com/twardoch/didyougetit-mac
+repo_name: twardoch/didyougetit-mac
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - navigation.instant
+    - navigation.tabs
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+    - Configuration: getting-started/configuration.md
+  - Features:
+    - Screen Recording: features/screen-recording.md
+    - Audio Recording: features/audio-recording.md
+    - Input Tracking: features/input-tracking.md
+    - Output Formats: features/output-formats.md
+  - Development:
+    - Architecture: development/architecture.md
+    - Building: development/building.md
+    - Testing: development/testing.md
+    - Contributing: development/contributing.md
+  - API Reference:
+    - Core Classes: api/core.md
+    - Recording Services: api/recording.md
+    - UI Components: api/ui.md
+  - Specification: specification.md
+  - Changelog: changelog.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        objc:
+          paths: [DidYouGetIt]
+        swift:
+          paths: [DidYouGetIt]
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/twardoch/didyougetit-mac
+    - icon: fontawesome/solid/globe
+      link: https://didyouget.it

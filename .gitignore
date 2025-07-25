@@ -64,3 +64,43 @@ DidYouGet_*.json
 DidYouGet_*.vtt
 # SpecStory explanation file
 .specstory/.what-is-this.md
+
+# Documentation build output
+docs/
+site/
+
+# MkDocs
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+env/
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Test coverage
+coverage.xml
+*.cover
+.coverage
+.pytest_cache/
+
+# Distribution / packaging
+dist/
+*.egg-info/
+
+# Logs
+*.log
+
+# Archives  
+DidYouGetIt.app.zip
+
+# Other
+.env
+.env.local
