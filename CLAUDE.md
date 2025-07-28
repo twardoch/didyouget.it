@@ -27,3 +27,88 @@ As you work:
 - Keep the CHANGELOG.md updated as you work.
 - After you make a change, perform `./run.sh` on macOS to build and run the app in debug mode, and observer the console output for any issues.
 
+
+
+
+START SPECIFICATION:
+---
+description: Overview of a macOS screen recording application focused on synchronized capture of video, audio, and input events with advanced tracking capabilities
+globs: *.swift,*.md
+alwaysApply: false
+---
+
+
+# main-overview
+
+## Development Guidelines
+
+- Only modify code directly relevant to the specific request. Avoid changing unrelated functionality.
+- Never replace code with placeholders like `# ... rest of the processing ...`. Always include complete code.
+- Break problems into smaller steps. Think through each step separately before implementing.
+- Always provide a complete PLAN with REASONING based on evidence from code and logs before making changes.
+- Explain your OBSERVATIONS clearly, then provide REASONING to identify the exact issue. Add console logs when needed to gather more information.
+
+
+Did You Get It (didyouget.it) is a macOS screen recording system with synchronized multi-stream capture capabilities.
+
+Core Components:
+
+1. Recording Coordination System
+- Manages synchronized capture of video, audio, and input events
+- Implements three recording modes: full display, window, and custom area
+- Coordinates between separate data streams with timestamp synchronization
+
+2. Input Event Tracking
+- Mouse tracking with click/hold detection and movement capture
+- Keyboard monitoring with tap/hold differentiation
+- JSON-formatted event logging with precise timing data
+
+3. Media Processing Pipeline
+Main Flows:
+- Screen capture at 60 FPS with Retina resolution support
+- Optional audio device selection and recording
+- Input event capture with timing correlation
+- Combined or separate output streams
+
+Key Business Rules:
+
+1. Recording Controls
+- Mandatory display/window selection enforcement
+- Permission and resource validation
+- Recovery from interrupted sessions
+
+2. Stream Management
+- Coordinated timestamp synchronization
+- Guaranteed event ordering
+- Independent stream quality control
+
+3. Data Collection
+- Configurable capture area selection
+- Audio device management
+- Mouse/keyboard event differentiation
+
+Business Logic Organization:
+
+1. Core Services (/Models/RecordingManager.swift)
+- Central recording coordination
+- Stream synchronization logic
+- Session state management
+
+2. Input Processing (/Models/InputTracking/)
+- Mouse event differentiation
+- Keyboard state tracking
+- Event timing coordination
+
+3. Media Handling (/Models/Recording/)
+- Video frame processing
+- Audio stream management
+- Output format control
+
+The system's primary value proposition lies in its ability to maintain precise synchronization between multiple data streams while providing detailed input tracking capabilities.
+
+$END$
+END SPECIFICATION
+
+If you work with Python, use 'uv pip' instead of 'pip', and use 'uvx hatch test' instead of 'python -m pytest'. 
+
+When I say /report, you must: Read all `./TODO.md` and `./PLAN.md` files and analyze recent changes. Document all changes in `./CHANGELOG.md`. From `./TODO.md` and `./PLAN.md` remove things that are done. Make sure that `./PLAN.md` contains a detailed, clear plan that discusses specifics, while `./TODO.md` is its flat simplified itemized `- [ ]`-prefixed representation. When I say /work, you must work in iterations like so: Read all `./TODO.md` and `./PLAN.md` files and reflect. Work on the tasks. Think, contemplate, research, reflect, refine, revise. Be careful, curious, vigilant, energetic. Verify your changes. Think aloud. Consult, research, reflect. Then update `./PLAN.md` and `./TODO.md` with tasks that will lead to improving the work you’ve just done. Then '/report', and then iterate again.
