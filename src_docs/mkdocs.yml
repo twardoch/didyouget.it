@@ -4,6 +4,9 @@ site_url: https://didyouget.it
 repo_url: https://github.com/twardoch/didyougetit-mac
 repo_name: twardoch/didyougetit-mac
 
+docs_dir: md
+site_dir: ../docs
+
 theme:
   name: material
   features:
