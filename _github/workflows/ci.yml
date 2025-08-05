@@ -1,0 +1,118 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Select Xcode version
+      run: sudo xcode-select -s /Applications/Xcode_15.0.app/Contents/Developer
+    
+    - name: Show Xcode version
+      run: xcodebuild -version
+    
+    - name: Show Swift version
+      run: swift --version
+    
+    - name: Cache Swift packages
+      uses: actions/cache@v3
+      with:
+        path: .build
+        key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift') }}
+        restore-keys: |
+          ${{ runner.os }}-spm-
+    
+    - name: Build project
+      run: |
+        if [ -f "Makefile" ]; then
+          make build
+        else
+          swift build
+        fi
+    
+    - name: Run tests
+      run: |
+        if [ -f "Makefile" ]; then
+          make test
+        else
+          swift test
+        fi
+    
+    - name: Build for release (main branch only)
+      if: github.ref == 'refs/heads/main'
+      run: |
+        if [ -f "Makefile" ]; then
+          make build-release
+        else
+          swift build -c release
+        fi
+    
+    - name: Archive build artifacts
+      if: github.ref == 'refs/heads/main'
+      uses: actions/upload-artifact@v3
+      with:
+        name: DidYouGetIt-Build
+        path: |
+          .build/release/
+          build/
+        retention-days: 30
+
+  lint-and-format:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install SwiftLint
+      run: brew install swiftlint
+    
+    - name: Install swift-format
+      run: brew install swift-format
+    
+    - name: Run SwiftLint
+      run: |
+        if [ -f ".swiftlint.yml" ]; then
+          swiftlint --config .swiftlint.yml
+        else
+          swiftlint
+        fi
+    
+    - name: Check Swift formatting
+      run: |
+        if [ -d "Sources" ]; then
+          swift-format lint --recursive Sources/
+        fi
+        if [ -d "DidYouGet" ]; then
+          swift-format lint --recursive DidYouGet/
+        fi
+
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'

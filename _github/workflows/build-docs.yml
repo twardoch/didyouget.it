@@ -1,0 +1,155 @@
+name: Build and Deploy MkDocs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src_docs/**'
+      - '_github/workflows/build-docs.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src_docs/**'
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Cache Python dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('src_docs/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install MkDocs and dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r src_docs/requirements.txt
+    
+    - name: Validate MkDocs configuration
+      run: |
+        cd src_docs
+        mkdocs config
+    
+    - name: Build MkDocs site
+      run: |
+        cd src_docs
+        mkdocs build --verbose --strict
+    
+    - name: Check built site
+      run: |
+        ls -la docs/
+        echo "Site built successfully!"
+        
+    - name: Deploy to GitHub Pages (main branch only)
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs
+        publish_branch: gh-pages
+        force_orphan: true
+        user_name: 'github-actions[bot]'
+        user_email: 'github-actions[bot]@users.noreply.github.com'
+        commit_message: |
+          Deploy MkDocs site
+          
+          🤖 Generated with [Claude Code](https://claude.ai/code)
+          
+          Source commit: ${{ github.sha }}
+    
+    - name: Upload documentation artifacts
+      if: github.event_name == 'pull_request'
+      uses: actions/upload-artifact@v3
+      with:
+        name: docs-preview
+        path: docs/
+        retention-days: 30
+    
+    - name: Comment PR with preview link
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const { owner, repo, number } = context.issue;
+          const runId = context.runId;
+          
+          const comment = `📖 **Documentation Preview**
+          
+          The documentation has been built successfully! You can download the preview from the [workflow artifacts](https://github.com/${owner}/${repo}/actions/runs/${runId}).
+          
+          🤖 Generated with [Claude Code](https://claude.ai/code)`;
+          
+          github.rest.issues.createComment({
+            owner,
+            repo,
+            issue_number: number,
+            body: comment
+          });
+
+  validate-links:
+    runs-on: ubuntu-latest
+    needs: build-docs
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r src_docs/requirements.txt
+        pip install mkdocs-linkcheck-plugin
+    
+    - name: Check for broken links
+      run: |
+        cd src_docs
+        mkdocs build
+        # Add linkcheck plugin to validate internal links
+        python -c "
+        import os
+        import re
+        from pathlib import Path
+        
+        docs_dir = Path('../docs')
+        broken_links = []
+        
+        for html_file in docs_dir.rglob('*.html'):
+            content = html_file.read_text()
+            # Basic link validation
+            links = re.findall(r'href=[\"\'](.*?)[\"\']', content)
+            for link in links:
+                if link.startswith('#') or link.startswith('http'):
+                    continue
+                link_path = html_file.parent / link
+                if not link_path.exists() and not (link_path.with_suffix('.html')).exists():
+                    broken_links.append(f'{html_file}: {link}')
+        
+        if broken_links:
+            print('Broken internal links found:')
+            for link in broken_links:
+                print(f'  - {link}')
+            exit(1)
+        else:
+            print('All internal links are valid!')
+        "
